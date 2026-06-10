@@ -1,0 +1,102 @@
+[build-system]
+requires = ["setuptools>=43.0.0", "wheel", "deephaven-plugin-packaging"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deephaven-plugin-tones"
+version = "0.1.0"
+description = "A Deephaven plugin that plays audio tones via the Tone.js library, usable in dh.ui render trees and driven by table data."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["deephaven", "plugin", "audio", "tone", "tonejs", "sonification"]
+authors = [{ name = "dsmmcken"}]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Framework :: Jupyter",
+]
+dependencies = [
+    "deephaven-core>=0.35.1",
+    "deephaven-plugin>=0.6.0",
+    "deephaven-plugin-utilities>=0.0.2",
+    "deephaven-plugin-ui>=0.37.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/dsmmcken/deephaven-plugin-tones"
+Repository = "https://github.com/dsmmcken/deephaven-plugin-tones"
+Issues = "https://github.com/dsmmcken/deephaven-plugin-tones/issues"
+
+[project.entry-points."deephaven.plugin"]
+registration_cls = "deephaven_plugin_tones.register:DeephavenPluginTonesRegistration"
+
+# Dev tooling installed by `uv sync`. ruff = lint/format, ty = type checking
+# (both from Astral). deephaven-server/watchdog power plugin_builder's
+# --server/--watch modes; click/watchdog are imported by plugin_builder.py.
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "ty",
+    "pytest>=8",
+    "deephaven-server",
+    "watchdog",
+    "click",
+]
+
+[tool.setuptools]
+include-package-data = true
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
+# Only ship the Python package. Without this, namespace discovery walks the JS
+# source tree (src/js) and treats any node_modules dir containing a stray *.py
+# (e.g. shell-quote/print.py) as a top-level `js` package, polluting the wheel
+# and site-packages. The built JS itself ships under deephaven_plugin_tones/_js
+# via setup.py's package_js step, not through package discovery.
+include = ["deephaven_plugin_tones*"]
+exclude = ["js*"]
+
+# This project is built/installed as a wheel via `uv build` + `uv pip install`
+# (see plugin_builder.py), which also runs the custom JS-packaging step in
+# setup.py. Marking it virtual keeps `uv sync` from trying to build the plugin
+# (and its JS) just to set up the dev environment; the runtime deps and dev
+# group are still installed.
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 88
+src = ["src"]
+extend-exclude = ["src/js"]
+
+[tool.ruff.lint]
+# pycodestyle errors, pyflakes, import sorting, pyupgrade, flake8-bugbear,
+# flake8-implicit-str-concat (ISC).
+select = ["E", "F", "I", "UP", "B", "ISC"]
+# `ruff format` owns code line length; E501 only flags long comments/strings it
+# cannot reflow, so leave it off to avoid noise.
+ignore = ["E501"]
+
+# ISC002 ("implicitly concatenated string literals over multiple lines") only
+# fires when multiline implicit concat is disallowed — the default allows it.
+# Disallowing it catches the missing-comma-in-a-list footgun where two adjacent
+# string literals silently merge into one. Combine into a single literal (E501
+# is off, so long string lines are fine) or use explicit concatenation instead.
+[tool.ruff.lint.flake8-implicit-str-concat]
+allow-multiline = false
+
+# Ruff is the formatter for this project (a Black-compatible drop-in) — there is no
+# separate formatter. Defaults apply (double quotes, space indent); we additionally
+# format code blocks inside docstrings.
+[tool.ruff.format]
+docstring-code-format = true

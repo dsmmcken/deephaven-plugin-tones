@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<!--
+  Tier-1 Harness — deephaven-plugin-tones E2E
+  ============================================
+  Loads the plugin's built CJS bundle the SAME way Deephaven does (via the
+  adapter's `new Function(module, exports, require, text)` evaluation), then
+  renders the REAL DeephavenPluginTonesView so tests drive the REAL ToneEngine.
+
+  React 17 is loaded via UMD <script> tags (window.React / window.ReactDOM)
+  before any module runs. The bundle's require('react') is satisfied from
+  window.React by the adapter's host shim.
+
+  window.__harness API (used by Playwright):
+    - renderRealView(props)   render the real View with given props
+    - unmountRealView()       unmount it
+    - getHook()               → window.__deephavenTones snapshot
+    - resetHook()             clear log + started + activeVoices
+    - pluginInfo()            → { name, hasView } from the loaded bundle
+
+  Layout fixture (no-DOM invariant):
+    #layout-row → [ #real-engine-container | #sibling(100px) ]
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ToneEngine harness</title>
+  <script src="/vendor/react.js"></script>
+  <script src="/vendor/react-dom.js"></script>
+</head>
+<body>
+  <button id="trigger" style="padding:8px 16px; font-size:14px;">
+    Start Audio (gesture unlock)
+  </button>
+
+  <div id="layout-row" style="display:flex; flex-direction:row;">
+    <div id="real-engine-container"></div>
+    <div id="sibling" style="width:100px; height:40px; background:#eee;"></div>
+  </div>
+
+  <div id="status" style="margin-top:8px; font-family:monospace;">loading…</div>
+
+  <script type="module">
+    // Enable the (opt-in) audio-output probe in ToneEngine BEFORE the bundle's
+    // first start(): it taps the master output with a Tone.Meter and exposes
+    // window.__deephavenTones.getOutputLevel() (dBFS). Must be set before load.
+    window.__deephavenTonesProbe = true;
+
+    let adapter;
+    try {
+      adapter = await import('/adapter/engine-adapter.js');
+    } catch (e) {
+      document.getElementById('status').textContent = 'adapter load error: ' + e;
+      console.error('[harness] adapter load error', e);
+      throw e;
+    }
+
+    window.__harness = {
+      renderRealView(props) { return adapter.renderRealView(props || {}); },
+      unmountRealView() { return adapter.unmountRealView(); },
+      // Multi-root helpers (engine-refcount tests): mount/unmount the real View
+      // into arbitrary containers so several Views can coexist.
+      renderViewInto(id, props) { return adapter.renderViewInto(id, props || {}); },
+      unmountViewFrom(id) { return adapter.unmountViewFrom(id); },
+      getHook() { return window.__deephavenTones; },
+      resetHook() {
+        // Clear the log/voice count between tests. Do NOT reset `started`:
+        // the engine is a module-level singleton whose internal `started` flag
+        // stays true after the first unlock, so flipping only the hook flag
+        // would desync them (start() is a no-op once started).
+        const h = window.__deephavenTones;
+        if (h) { h.log = []; h.activeVoices = 0; }
+      },
+      pluginInfo() {
+        return { name: adapter.PLUGIN_NAME, hasView: typeof adapter.VIEW_COMPONENT === 'function' };
+      },
+    };
+
+    // A real user-gesture button (Playwright can click it) — clicking it
+    // renders a play event so Tone.start() runs inside a trusted gesture.
+    document.getElementById('trigger').addEventListener('click', () => {
+      adapter.renderRealView({ events: [{ id: 0, op: 'play', note: 'C4' }], config: {} });
+      document.getElementById('status').textContent = 'gesture play dispatched';
+    });
+
+    window.__harnessReady = true;
+    document.getElementById('status').textContent =
+      'harness ready — plugin: ' + adapter.PLUGIN_NAME;
+    console.log('[harness] ready; plugin:', adapter.PLUGIN_NAME, 'view:', typeof adapter.VIEW_COMPONENT);
+  </script>
+</body>
+</html>

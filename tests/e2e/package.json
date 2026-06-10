@@ -1,0 +1,16 @@
+{
+  "name": "deephaven-plugin-tones-e2e",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Playwright E2E tests for deephaven-plugin-tones",
+  "scripts": {
+    "test": "playwright test",
+    "test:tier1": "playwright test --project tier1",
+    "test:tier2": "playwright test --project tier2",
+    "install-browsers": "playwright install chromium --with-deps",
+    "server": "node harness/server.js 19876"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

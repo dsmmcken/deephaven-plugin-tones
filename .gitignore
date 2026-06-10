@@ -1,0 +1,49 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+*.whl
+
+# Packaging / virtual envs (uv, venv)
+.venv/
+/venv
+.python-version
+
+# Test & lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# --- JavaScript / TypeScript (src/js, tests/e2e) ---
+node_modules/
+# Vite / tsc build output
+src/js/dist/
+src/js/build/
+
+# Playwright
+playwright-report/
+test-results/
+.playwright/
+
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Editors / OS ---
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# --- Deephaven server runtime data dir (created when mounting the repo as --data-dir) ---
+storage/
+agent-notes/

@@ -21,7 +21,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Multimedia :: Sound/Audio",
-    "Framework :: Jupyter",
+    "Environment :: Plugins",
+    "Operating System :: OS Independent",
 ]
 dependencies = [
     "deephaven-core>=0.35.1",

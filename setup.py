@@ -10,4 +10,9 @@ dest_dir = os.path.join("src/deephaven_plugin_tones/_js")
 
 package_js(js_dir, dest_dir)
 
-setup(package_data={"deephaven_plugin_tones._js": ["**"]})
+setup(
+    package_data={
+        "deephaven_plugin_tones": ["py.typed"],
+        "deephaven_plugin_tones._js": ["**"],
+    }
+)

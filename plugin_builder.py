@@ -5,7 +5,7 @@ import os
 import shutil
 import subprocess
 import threading
-from typing import Callable
+from collections.abc import Callable
 
 import click
 from watchdog.events import FileSystemEvent, RegexMatchingEventHandler

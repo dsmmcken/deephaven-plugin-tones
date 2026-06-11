@@ -23,11 +23,41 @@ Public surface::
 """
 
 from .deephaven_plugin_tones_component import (
+    ColumnInput,
+    FilterRolloff,
+    FilterType,
+    Instrument,
+    MidiNote,
+    NoteInput,
+    NoteValue,
+    ParamInput,
+    TableMode,
     Tones,
     TonesControl,
     TonesElement,
+    ToneTime,
+    VoiceOverride,
     table_tones,
     use_tones,
 )
 
-__all__ = ["use_tones", "table_tones", "Tones", "TonesElement", "TonesControl"]
+__all__ = [
+    # entry points + result/handle types
+    "use_tones",
+    "table_tones",
+    "Tones",
+    "TonesElement",
+    "TonesControl",
+    # type aliases for annotating user code
+    "Instrument",
+    "FilterType",
+    "FilterRolloff",
+    "TableMode",
+    "ToneTime",
+    "NoteValue",
+    "NoteInput",
+    "MidiNote",
+    "ParamInput",
+    "ColumnInput",
+    "VoiceOverride",
+]

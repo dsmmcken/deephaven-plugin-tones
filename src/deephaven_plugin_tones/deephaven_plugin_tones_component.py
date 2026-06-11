@@ -27,16 +27,106 @@ Design:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from typing import Any, NamedTuple
+from collections.abc import Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypedDict, get_args
 
 from deephaven.ui.elements import BaseElement
 from deephaven.ui.hooks import use_memo, use_ref, use_state
+
+if TYPE_CHECKING:
+    from deephaven.table import Table
 
 # ---------------------------------------------------------------------------
 # Element name — MUST match the JS pluginsElementMap key exactly.
 # ---------------------------------------------------------------------------
 _ELEMENT_NAME = "deephaven_plugin_tones.deephaven_plugin_tones_component"
+
+# ---------------------------------------------------------------------------
+# Public type aliases (re-exported from the package __init__)
+# ---------------------------------------------------------------------------
+
+#: Tone.js synth types accepted by ``instrument`` (top-level and per-voice).
+Instrument = Literal[
+    "sine",
+    "triangle",
+    "square",
+    "sawtooth",
+    "fm",
+    "am",
+    "membrane",
+    "pluck",
+    "monosynth",
+    "duosynth",
+    "metal",
+]
+
+#: Filter curves accepted by ``filter_type``.
+FilterType = Literal["lowpass", "highpass", "bandpass", "notch", "allpass", "peaking"]
+
+#: Filter rolloffs (dB/octave) accepted by ``filter_rolloff``.
+FilterRolloff = Literal[-12, -24, -48, -96]
+
+#: Row-delivery modes for table sonification: most-recent row vs. every row.
+TableMode = Literal["last", "all"]
+
+#: A Tone.js time value: a note string like ``"8n"`` or plain seconds.
+ToneTime = str | float
+
+
+class MidiNote(TypedDict):
+    """The explicit-MIDI pitch form: ``{"midi": 60}``."""
+
+    midi: int
+
+
+#: A single pitch: a note name (``"C4"``), Hz (number), or ``{"midi": 60}``.
+NoteValue = str | float | MidiNote
+
+#: One sequence item: a bare :data:`NoteValue`, or a tuple attaching a
+#: per-note duration and optionally a velocity — ``("C5", "16n")`` /
+#: ``("C5", "16n", 0.9)``.
+NoteInput = (
+    NoteValue
+    | tuple[NoteValue]
+    | tuple[NoteValue, ToneTime]
+    | tuple[NoteValue, ToneTime, float]
+)
+
+#: An overloaded numeric effect param for ``table_tones``: a number (static),
+#: a column name (data-driven, output range defaulted per param), or
+#: ``(col, lo, hi)`` (data-driven with an explicit OUTPUT range).
+ParamInput = float | str | tuple[str] | tuple[str, float, float]
+
+#: A ``pitch`` / ``loudness`` column for ``table_tones``: ``"Col"`` (input
+#: range auto-tracked) or ``("Col", lo, hi)`` clamping the INPUT data domain.
+ColumnInput = str | tuple[str] | tuple[str, float, float]
+
+
+class VoiceOverride(TypedDict, total=False):
+    """
+    A flat per-voice config override for ``table_tones(voices=...,
+    voice_default=...)``. Keys mirror the flat ``table_tones`` param names;
+    any key left out keeps the base config's value. A ``False`` effect toggle
+    disables that node for the voice.
+    """
+
+    instrument: Instrument
+    polyphony: int
+    envelope_attack: float
+    envelope_decay: float
+    envelope_sustain: float
+    envelope_release: float
+    detune: float
+    portamento: float
+    volume: float
+    pan: float
+    filter: bool
+    reverb: bool
+    delay: bool
+    distortion: bool
+    chorus: bool
+    ping_pong: bool
+
 
 # ---------------------------------------------------------------------------
 # Bounded deque helpers
@@ -67,10 +157,10 @@ _DEFAULT_ENVELOPE: dict[str, Any] = {
 
 
 def _resolve_envelope(
-    envelope_attack: int | float | None,
-    envelope_decay: int | float | None,
-    envelope_sustain: int | float | None,
-    envelope_release: int | float | None,
+    envelope_attack: float | None,
+    envelope_decay: float | None,
+    envelope_sustain: float | None,
+    envelope_release: float | None,
 ) -> dict[str, Any]:
     """
     Resolve the flat ``envelope_*`` kwargs into a complete ADSR dict, filling
@@ -123,53 +213,53 @@ _DEFAULT_PINGPONG: dict[str, Any] = {
 
 # Master limiter threshold (dBFS) — a brick-wall on the master bus that keeps
 # loud bursts (high polyphony / many simultaneous rows) from clipping.
-_DEFAULT_LIMITER_THRESHOLD: int | float = -1
+_DEFAULT_LIMITER_THRESHOLD: float = -1
 
 
 def _build_config(
     *,
     instrument: str,
     polyphony: int,
-    envelope_attack: int | float | None,
-    envelope_decay: int | float | None,
-    envelope_sustain: int | float | None,
-    envelope_release: int | float | None,
-    detune: int | float,
-    portamento: int | float,
+    envelope_attack: float | None,
+    envelope_decay: float | None,
+    envelope_sustain: float | None,
+    envelope_release: float | None,
+    detune: float,
+    portamento: float,
     filter: bool,  # noqa: A002 — effect on/off toggle
     filter_type: str,
-    filter_frequency: int | float,
-    filter_q: int | float,
+    filter_frequency: float,
+    filter_q: float,
     filter_rolloff: int,
     reverb: bool,
-    reverb_decay: int | float,
-    reverb_wet: int | float,
-    reverb_predelay: int | float,
+    reverb_decay: float,
+    reverb_wet: float,
+    reverb_predelay: float,
     delay: bool,
-    delay_time: str | int | float | None,
-    delay_feedback: int | float | None,
-    delay_wet: int | float | None,
-    volume: int | float,
-    pan: int | float,
-    scale: str | list[int],
+    delay_time: ToneTime | None,
+    delay_feedback: float | None,
+    delay_wet: float | None,
+    volume: float,
+    pan: float,
+    scale: str | Sequence[int],
     root: str,
     octaves: int,
-    value_range: list[float] | tuple[float, float] | None,
+    value_range: Sequence[float] | None,
     descending: bool,
     # Tier 1 effects — each defaults so existing callers/tests need not pass them.
     distortion: bool = False,
-    distortion_amount: int | float | None = None,
-    distortion_wet: int | float | None = None,
+    distortion_amount: float | None = None,
+    distortion_wet: float | None = None,
     chorus: bool = False,
-    chorus_frequency: int | float | None = None,
-    chorus_depth: int | float | None = None,
-    chorus_wet: int | float | None = None,
+    chorus_frequency: float | None = None,
+    chorus_depth: float | None = None,
+    chorus_wet: float | None = None,
     ping_pong: bool = False,
-    ping_pong_time: str | int | float | None = None,
-    ping_pong_feedback: int | float | None = None,
-    ping_pong_wet: int | float | None = None,
+    ping_pong_time: ToneTime | None = None,
+    ping_pong_feedback: float | None = None,
+    ping_pong_wet: float | None = None,
     limiter: bool = True,
-    limiter_threshold: int | float = _DEFAULT_LIMITER_THRESHOLD,
+    limiter_threshold: float = _DEFAULT_LIMITER_THRESHOLD,
 ) -> dict[str, Any]:
     """
     Build the ``config`` dict with **verbatim camelCase keys** as required by
@@ -295,7 +385,7 @@ def _build_config(
         "limiter": resolved_limiter,
         "volume": volume,
         "pan": pan,
-        "scale": scale,
+        "scale": scale if isinstance(scale, str) else list(scale),
         "root": root,
         "octaves": octaves,
         "valueRange": vr,
@@ -339,9 +429,9 @@ _PARAM_PATHS: dict[str, str] = {
 
 
 def _resolve_param(
-    value: Any,
-    default: int | float,
-) -> tuple[int | float, dict[str, Any] | None]:
+    value: ParamInput | None,
+    default: float,
+) -> tuple[float, dict[str, Any] | None]:
     """
     Split an overloaded numeric param into ``(static_baseline, channel)``.
 
@@ -375,7 +465,7 @@ def _resolve_param(
 
 
 def _resolve_pitch(
-    value: str | tuple[Any, ...] | list[Any] | None,
+    value: ColumnInput | None,
 ) -> tuple[str | None, list[float] | None]:
     """
     Resolve ``pitch`` / ``loudness`` (which name a COLUMN). Unlike effect
@@ -391,7 +481,7 @@ def _resolve_pitch(
     if isinstance(value, str):
         return value, None
     if isinstance(value, (list, tuple)):
-        parts = list(value)
+        parts: list[Any] = list(value)
         if len(parts) == 1:
             return parts[0], None
         if len(parts) == 3:
@@ -453,9 +543,9 @@ _RANGE_MAX_SUFFIX = "_tones_max"
 
 
 def _augment_with_ranges(
-    table: Any,
+    table: Table | None,
     cols: Sequence[str],
-) -> tuple[Any, dict[str, tuple[str, str]]]:
+) -> tuple[Table | None, dict[str, tuple[str, str]]]:
     """
     Return ``(augmented_table, {col: (min_col, max_col)})``.
 
@@ -517,7 +607,7 @@ def _augment_with_ranges(
 
 
 def _validate_columns(
-    table: Any,
+    table: Table | None,
     referenced: Sequence[tuple[str, str | None]],
 ) -> None:
     """
@@ -554,30 +644,13 @@ def _validate_columns(
 
 # Enumerated config values. These are passed straight through to Tone.js, where
 # an unknown value fails silently in the browser (the failure mode AGENTS.md's
-# Debugging section calls out). Validating them at render time — alongside the
-# column check above — turns that into an actionable ValueError instead.
-_INSTRUMENTS: tuple[str, ...] = (
-    "sine",
-    "triangle",
-    "square",
-    "sawtooth",
-    "fm",
-    "am",
-    "membrane",
-    "pluck",
-    "monosynth",
-    "duosynth",
-    "metal",
-)
-_FILTER_TYPES: tuple[str, ...] = (
-    "lowpass",
-    "highpass",
-    "bandpass",
-    "notch",
-    "allpass",
-    "peaking",
-)
-_FILTER_ROLLOFFS: tuple[int, ...] = (-12, -24, -48, -96)
+# Debugging section calls out). The Literal aliases above catch typos
+# statically; validating at render time — alongside the column check above —
+# turns the dynamic case into an actionable ValueError instead.
+_INSTRUMENTS: tuple[str, ...] = get_args(Instrument)
+_FILTER_TYPES: tuple[str, ...] = get_args(FilterType)
+_FILTER_ROLLOFFS: tuple[int, ...] = get_args(FilterRolloff)
+_TABLE_MODES: tuple[str, ...] = get_args(TableMode)
 
 
 def _validate_config_enums(
@@ -585,12 +658,15 @@ def _validate_config_enums(
     instrument: str,
     filter_type: str,
     filter_rolloff: int,
-    voices: dict[str, dict[str, Any]] | None = None,
+    voices: Mapping[Any, VoiceOverride] | None = None,
+    mode: str | None = None,
 ) -> None:
     """
     Raise ``ValueError`` for an out-of-range ``instrument`` / ``filter_type`` /
-    ``filter_rolloff`` (and any per-voice ``instrument`` override), naming the
-    offender and the valid set. *fn* is the calling function name for the message.
+    ``filter_rolloff`` / ``mode`` (and any per-voice ``instrument`` override),
+    naming the offender and the valid set. *fn* is the calling function name
+    for the message; a ``None`` *mode* skips the mode check (``use_tones`` has
+    no mode param).
     """
     if instrument not in _INSTRUMENTS:
         raise ValueError(
@@ -603,6 +679,10 @@ def _validate_config_enums(
     if filter_rolloff not in _FILTER_ROLLOFFS:
         raise ValueError(
             f"{fn}(): unknown filter_rolloff {filter_rolloff!r}. Choose one of: {', '.join(str(r) for r in _FILTER_ROLLOFFS)}."
+        )
+    if mode is not None and mode not in _TABLE_MODES:
+        raise ValueError(
+            f"{fn}(): unknown mode {mode!r}. Choose one of: {', '.join(_TABLE_MODES)}."
         )
     for key, override in (voices or {}).items():
         inst = override.get("instrument")
@@ -628,9 +708,9 @@ _DEFAULT_CHORDS: list[list[str]] = [
 
 def _build_chord_trigger(
     chord_column: str | None,
-    chords: list[list[str]] | None,
-    chord_gap: str,
-    chord_duration: str,
+    chords: Sequence[Sequence[str]] | None,
+    chord_gap: ToneTime,
+    chord_duration: ToneTime,
     chord_notes_column: str | None,
 ) -> dict[str, Any] | None:
     """
@@ -662,8 +742,8 @@ _DEFAULT_SEQUENCE: list[str] = ["C5", "E5", "G5", "C6"]
 
 def _build_sequence_trigger(
     sequence_column: str | None,
-    sequence_notes: Sequence[Any] | None,
-    sequence_gap: str,
+    sequence_notes: Sequence[NoteInput] | None,
+    sequence_gap: ToneTime,
     sequence_notes_column: str | None,
 ) -> dict[str, Any] | None:
     """
@@ -726,7 +806,7 @@ _VOICE_EFFECT_TOGGLES: dict[str, str] = {
 
 
 def _voice_override_to_config(
-    flat: dict[str, Any],
+    flat: Mapping[str, Any],
     base_envelope: dict[str, Any],
 ) -> dict[str, Any]:
     """
@@ -760,11 +840,11 @@ def _voice_override_to_config(
 def _build_mappings(
     pitch: str | None,
     loudness: str | None,
-    loudness_range: list[float] | tuple[float, float] | None,
+    loudness_range: Sequence[float] | None,
     voice: str | None,
-    voices: dict[str, dict[str, Any]] | None,
+    voices: Mapping[Any, VoiceOverride] | None,
     base_envelope: dict[str, Any] | None = None,
-    voice_default: dict[str, Any] | None = None,
+    voice_default: VoiceOverride | None = None,
 ) -> dict[str, Any] | None:
     """
     Build the ``mappings`` prop for value→pitch table sonification, or ``None``
@@ -813,8 +893,8 @@ def _build_mappings(
 
 def _make_play_event(
     eid: int,
-    note: str | int | float | dict[str, Any],
-    duration: str,
+    note: NoteValue,
+    duration: ToneTime,
     velocity: float,
 ) -> dict[str, Any]:
     """Build a ``play`` event dict."""
@@ -829,8 +909,8 @@ def _make_play_event(
 
 def _make_chord_event(
     eid: int,
-    notes: list[Any],
-    duration: str,
+    notes: Sequence[NoteValue],
+    duration: ToneTime,
     velocity: float,
 ) -> dict[str, Any]:
     """Build a ``chord`` event dict."""
@@ -860,7 +940,7 @@ def _make_value_event(
 def _make_sequence_event(
     eid: int,
     notes: list[dict[str, Any]],
-    gap: str,
+    gap: ToneTime,
     envelope: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """Build a ``sequence`` event dict."""
@@ -878,7 +958,7 @@ def _make_stop_event(eid: int) -> dict[str, Any]:
     return {"id": eid, "op": "stop"}
 
 
-def _make_set_volume_event(eid: int, db: int | float) -> dict[str, Any]:
+def _make_set_volume_event(eid: int, db: float) -> dict[str, Any]:
     """Build a ``setVolume`` event dict."""
     return {"id": eid, "op": "setVolume", "db": db}
 
@@ -887,21 +967,18 @@ def _make_set_volume_event(eid: int, db: int | float) -> dict[str, Any]:
 # Sequence note normalisation
 # ---------------------------------------------------------------------------
 
-# Accepted input shapes for a single sequence item. A bare *note value* is a
-# pitch name, Hz, or the one explicit-MIDI form ``{"midi": 60}``; wrap it in a
-# tuple to attach a per-note duration / velocity:
+# Accepted input shapes for a single sequence item — the ``NoteValue`` /
+# ``NoteInput`` aliases at the top of this module:
 #   "C5"                 → note name
 #   440.0                → Hz
 #   {"midi": 60}         → explicit MIDI note value
 #   ("C5", "16n")        → note + duration
 #   ("C5", "16n", 0.9)   → note + duration + velocity
-NoteValue = str | int | float | dict[str, Any]
-NoteInput = NoteValue | tuple[Any, ...]
 
 
 def _normalize_sequence_notes(
     notes: Sequence[NoteInput],
-    default_duration: str,
+    default_duration: ToneTime,
     default_velocity: float,
 ) -> list[dict[str, Any]]:
     """
@@ -921,7 +998,7 @@ def _normalize_sequence_notes(
     result: list[dict[str, Any]] = []
     for item in notes:
         if isinstance(item, (list, tuple)):
-            parts = list(item)
+            parts: list[Any] = list(item)
             note = parts[0]
             duration = parts[1] if len(parts) > 1 else default_duration
             velocity = float(parts[2]) if len(parts) > 2 else default_velocity
@@ -939,10 +1016,10 @@ def _normalize_sequence_notes(
 
 
 def _envelope_from_flat(
-    attack: int | float | None,
-    decay: int | float | None,
-    sustain: int | float | None,
-    release: int | float | None,
+    attack: float | None,
+    decay: float | None,
+    sustain: float | None,
+    release: float | None,
 ) -> dict[str, Any] | None:
     """
     Collect the flat per-call ADSR kwargs into a (possibly partial) envelope
@@ -960,29 +1037,6 @@ def _envelope_from_flat(
     if release is not None:
         env["release"] = release
     return env or None
-
-
-# ---------------------------------------------------------------------------
-# Value overrides: only scale/root/octaves/valueRange/descending are valid
-# ---------------------------------------------------------------------------
-
-_OVERRIDE_KEYS: frozenset[str] = frozenset(
-    {"scale", "root", "octaves", "valueRange", "descending"}
-)
-
-
-def _build_overrides(**kwargs: Any) -> dict[str, Any]:
-    """
-    Filter and normalise play_value overrides to only the keys the client
-    understands (camelCase).  Accept snake_case ``value_range`` as an alias.
-    """
-    out: dict[str, Any] = {}
-    for k, v in kwargs.items():
-        if k == "value_range":
-            out["valueRange"] = list(v) if v is not None else None
-        elif k in _OVERRIDE_KEYS:
-            out[k] = v
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1022,8 +1076,8 @@ class TonesControl:
 
     def play(
         self,
-        note: str | int | float | dict[str, Any],
-        duration: str = "8n",
+        note: NoteValue,
+        duration: ToneTime = "8n",
         velocity: float = 1.0,
     ) -> None:
         """
@@ -1031,53 +1085,70 @@ class TonesControl:
 
         Args:
             note: Pitch as ``"C4"``, Hz (number), or ``{"midi": 60}``.
-            duration: Tone.js duration string, default ``"8n"``.
+            duration: Tone.js time (note string or seconds), default ``"8n"``.
             velocity: 0.0–1.0, default 1.0.
         """
         self._emit(_make_play_event(self._next_id(), note, duration, velocity))
 
     def play_chord(
         self,
-        notes: list[Any],
-        duration: str = "2n",
+        notes: Sequence[NoteValue],
+        duration: ToneTime = "2n",
         velocity: float = 1.0,
     ) -> None:
         """
         Play multiple notes simultaneously.
 
         Args:
-            notes: List of pitches (same accepted forms as ``play``).
-            duration: Tone.js duration string, default ``"2n"``.
+            notes: Pitches to play together (same accepted forms as ``play``).
+            duration: Tone.js time (note string or seconds), default ``"2n"``.
             velocity: 0.0–1.0, default 1.0.
         """
         self._emit(_make_chord_event(self._next_id(), notes, duration, velocity))
 
-    def play_value(self, value: float, **overrides: Any) -> None:
+    def play_value(
+        self,
+        value: float,
+        *,
+        scale: str | Sequence[int] | None = None,
+        root: str | None = None,
+        octaves: int | None = None,
+        value_range: Sequence[float] | None = None,
+        descending: bool | None = None,
+    ) -> None:
         """
         Map a numeric value to a pitch using the configured
-        scale/root/octaves/valueRange/descending, then play it.
+        scale/root/octaves/value_range/descending, then play it.
 
         Args:
             value: Numeric value to sonify.
-            **overrides: Override subset of scale/root/octaves/
-                         value_range/valueRange/descending for this call only.
+            scale, root, octaves, value_range, descending: Per-call overrides
+                of the corresponding ``use_tones`` config; each ``None`` keeps
+                the configured value.
         """
-        self._emit(
-            _make_value_event(
-                self._next_id(), float(value), _build_overrides(**overrides)
-            )
-        )
+        overrides: dict[str, Any] = {}
+        if scale is not None:
+            overrides["scale"] = scale if isinstance(scale, str) else list(scale)
+        if root is not None:
+            overrides["root"] = root
+        if octaves is not None:
+            overrides["octaves"] = octaves
+        if value_range is not None:
+            overrides["valueRange"] = list(value_range)
+        if descending is not None:
+            overrides["descending"] = descending
+        self._emit(_make_value_event(self._next_id(), float(value), overrides))
 
     def play_sequence(
         self,
         notes: Sequence[NoteInput],
-        gap: str = "16n",
-        duration: str = "8n",
+        gap: ToneTime = "16n",
+        duration: ToneTime = "8n",
         velocity: float = 0.9,
-        attack: int | float | None = None,
-        decay: int | float | None = None,
-        sustain: int | float | None = None,
-        release: int | float | None = None,
+        attack: float | None = None,
+        decay: float | None = None,
+        sustain: float | None = None,
+        release: float | None = None,
     ) -> None:
         """
         Play a timed melody / arpeggio.  Self-terminating — don't follow it with
@@ -1100,7 +1171,7 @@ class TonesControl:
         """Stop all currently-playing sounds immediately."""
         self._emit(_make_stop_event(self._next_id()))
 
-    def set_volume(self, db: int | float) -> None:
+    def set_volume(self, db: float) -> None:
         """
         Adjust master volume.
 
@@ -1139,43 +1210,43 @@ class Tones(NamedTuple):
 
 
 def use_tones(
-    instrument: str = "sine",
+    instrument: Instrument = "sine",
     polyphony: int = 8,
-    envelope_attack: int | float | None = None,
-    envelope_decay: int | float | None = None,
-    envelope_sustain: int | float | None = None,
-    envelope_release: int | float | None = None,
-    detune: int | float = 0,
-    portamento: int | float = 0,
+    envelope_attack: float | None = None,
+    envelope_decay: float | None = None,
+    envelope_sustain: float | None = None,
+    envelope_release: float | None = None,
+    detune: float = 0,
+    portamento: float = 0,
     filter: bool = True,  # noqa: A002 — effect on/off toggle
-    filter_type: str = "lowpass",
-    filter_frequency: int | float = 2200,
-    filter_q: int | float = 1,
-    filter_rolloff: int = -24,
+    filter_type: FilterType = "lowpass",
+    filter_frequency: float = 2200,
+    filter_q: float = 1,
+    filter_rolloff: FilterRolloff = -24,
     reverb: bool = True,
-    reverb_decay: int | float = 3,
-    reverb_wet: int | float = 0.3,
-    reverb_predelay: int | float = 0.01,
+    reverb_decay: float = 3,
+    reverb_wet: float = 0.3,
+    reverb_predelay: float = 0.01,
     delay: bool = False,
-    delay_time: str | int | float | None = None,
-    delay_feedback: int | float | None = None,
-    delay_wet: int | float | None = None,
+    delay_time: ToneTime | None = None,
+    delay_feedback: float | None = None,
+    delay_wet: float | None = None,
     distortion: bool = False,
-    distortion_amount: int | float | None = None,
-    distortion_wet: int | float | None = None,
+    distortion_amount: float | None = None,
+    distortion_wet: float | None = None,
     chorus: bool = False,
-    chorus_frequency: int | float | None = None,
-    chorus_depth: int | float | None = None,
-    chorus_wet: int | float | None = None,
+    chorus_frequency: float | None = None,
+    chorus_depth: float | None = None,
+    chorus_wet: float | None = None,
     ping_pong: bool = False,
-    ping_pong_time: str | int | float | None = None,
-    ping_pong_feedback: int | float | None = None,
-    ping_pong_wet: int | float | None = None,
+    ping_pong_time: ToneTime | None = None,
+    ping_pong_feedback: float | None = None,
+    ping_pong_wet: float | None = None,
     limiter: bool = True,
-    limiter_threshold: int | float = _DEFAULT_LIMITER_THRESHOLD,
-    volume: int | float = -8,
-    pan: int | float = 0,
-    scale: str | list[int] = "pentatonic",
+    limiter_threshold: float = _DEFAULT_LIMITER_THRESHOLD,
+    volume: float = -8,
+    pan: float = 0,
+    scale: str | Sequence[int] = "pentatonic",
     root: str = "C3",
     octaves: int = 3,
     descending: bool = False,
@@ -1337,73 +1408,73 @@ def use_tones(
 
 
 def table_tones(
-    table: Any,
+    table: Table,
     *,
     # Instrument / voice
-    instrument: str = "sine",
+    instrument: Instrument = "sine",
     polyphony: int = 8,
-    envelope_attack: int | float | None = None,
-    envelope_decay: int | float | None = None,
-    envelope_sustain: int | float | None = None,
-    envelope_release: int | float | None = None,
-    detune: int | float | str | tuple[Any, ...] = 0,
-    portamento: int | float = 0,
-    # Effects — each numeric param accepts a number (static), a column-name str
+    envelope_attack: float | None = None,
+    envelope_decay: float | None = None,
+    envelope_sustain: float | None = None,
+    envelope_release: float | None = None,
+    detune: ParamInput = 0,
+    portamento: float = 0,
+    # Effects — each ParamInput accepts a number (static), a column-name str
     # (data-driven), or (col, lo, hi) (data-driven + output range).
     filter: bool = True,  # noqa: A002 — effect on/off toggle
-    filter_type: str = "lowpass",
-    filter_frequency: int | float | str | tuple[Any, ...] = 2200,
-    filter_q: int | float | str | tuple[Any, ...] = 1,
-    filter_rolloff: int = -24,
+    filter_type: FilterType = "lowpass",
+    filter_frequency: ParamInput = 2200,
+    filter_q: ParamInput = 1,
+    filter_rolloff: FilterRolloff = -24,
     reverb: bool = True,
-    reverb_decay: int | float = 3,
-    reverb_wet: int | float | str | tuple[Any, ...] = 0.3,
-    reverb_predelay: int | float = 0.01,
+    reverb_decay: float = 3,
+    reverb_wet: ParamInput = 0.3,
+    reverb_predelay: float = 0.01,
     delay: bool = False,
-    delay_time: str | int | float | None = None,
-    delay_feedback: int | float | str | tuple[Any, ...] | None = None,
-    delay_wet: int | float | str | tuple[Any, ...] | None = None,
+    delay_time: ToneTime | None = None,
+    delay_feedback: ParamInput | None = None,
+    delay_wet: ParamInput | None = None,
     distortion: bool = False,
-    distortion_amount: int | float = 0.4,
-    distortion_wet: int | float | str | tuple[Any, ...] | None = None,
+    distortion_amount: float = 0.4,
+    distortion_wet: ParamInput | None = None,
     chorus: bool = False,
-    chorus_frequency: int | float = 1.5,
-    chorus_depth: int | float = 0.7,
-    chorus_wet: int | float | str | tuple[Any, ...] | None = None,
+    chorus_frequency: float = 1.5,
+    chorus_depth: float = 0.7,
+    chorus_wet: ParamInput | None = None,
     ping_pong: bool = False,
-    ping_pong_time: str | int | float = "8n",
-    ping_pong_feedback: int | float | str | tuple[Any, ...] | None = None,
-    ping_pong_wet: int | float | str | tuple[Any, ...] | None = None,
+    ping_pong_time: ToneTime = "8n",
+    ping_pong_feedback: ParamInput | None = None,
+    ping_pong_wet: ParamInput | None = None,
     limiter: bool = True,
-    limiter_threshold: int | float = _DEFAULT_LIMITER_THRESHOLD,
-    volume: int | float = -8,
-    pan: int | float | str | tuple[Any, ...] = 0,
+    limiter_threshold: float = _DEFAULT_LIMITER_THRESHOLD,
+    volume: float = -8,
+    pan: ParamInput = 0,
     # Value→pitch mapping
-    scale: str | list[int] = "pentatonic",
+    scale: str | Sequence[int] = "pentatonic",
     root: str = "C3",
     octaves: int = 3,
     descending: bool = False,
     # Table behaviour
-    mode: str = "last",
+    mode: TableMode = "last",
     rate_limit_ms: int = 60,
     # Table mode — value→pitch sonify. `pitch` alone maps one column to pitch;
     # add `loudness`/`voice` for a multi-dimensional "duet". Each names a COLUMN;
     # "Col" or (col, lo, hi) where (lo, hi) clamps the INPUT data domain.
-    pitch: str | tuple[Any, ...] | None = None,
-    loudness: str | tuple[Any, ...] | None = None,
+    pitch: ColumnInput | None = None,
+    loudness: ColumnInput | None = None,
     voice: str | None = None,
-    voices: dict[str, dict[str, Any]] | None = None,
-    voice_default: dict[str, Any] | None = None,
+    voices: Mapping[Any, VoiceOverride] | None = None,
+    voice_default: VoiceOverride | None = None,
     # Table mode (chord trigger)
     chord_column: str | None = None,
-    chords: list[list[str]] | None = None,
-    chord_gap: str = "4n",
-    chord_duration: str = "2n",
+    chords: Sequence[Sequence[str]] | None = None,
+    chord_gap: ToneTime = "4n",
+    chord_duration: ToneTime = "2n",
     chord_notes_column: str | None = None,
     # Table mode (sequence trigger — the play_sequence analogue)
     sequence_column: str | None = None,
-    sequence_notes: Sequence[Any] | None = None,
-    sequence_gap: str = "16n",
+    sequence_notes: Sequence[NoteInput] | None = None,
+    sequence_gap: ToneTime = "16n",
     sequence_notes_column: str | None = None,
 ) -> TonesElement:
     """
@@ -1635,7 +1706,7 @@ def table_tones(
             _referenced.append((_kw, _ch.get("column")))
     _validate_columns(table, _referenced)
     _validate_config_enums(
-        "table_tones", instrument, filter_type, filter_rolloff, voices
+        "table_tones", instrument, filter_type, filter_rolloff, voices, mode=mode
     )
     # ----------------------------------------------------------------------
 

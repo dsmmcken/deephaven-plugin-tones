@@ -7,7 +7,7 @@ name = "deephaven-plugin-tones"
 version = "0.1.0"
 description = "A Deephaven plugin that plays audio tones via the Tone.js library, usable in dh.ui render trees and driven by table data."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 keywords = ["deephaven", "plugin", "audio", "tone", "tonejs", "sonification"]

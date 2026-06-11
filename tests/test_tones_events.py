@@ -86,7 +86,6 @@ _comp = importlib.import_module(
 
 _bounded_append = _comp._bounded_append
 _build_config = _comp._build_config
-_build_overrides = _comp._build_overrides
 _make_chord_event = _comp._make_chord_event
 _make_play_event = _comp._make_play_event
 _make_sequence_event = _comp._make_sequence_event
@@ -669,30 +668,61 @@ class TestBuildParamMappings:
 
 
 # ---------------------------------------------------------------------------
-# _build_overrides
+# play_value overrides (explicit keyword params)
 # ---------------------------------------------------------------------------
 
 
-class TestBuildOverrides:
-    def test_empty(self):
-        assert _build_overrides() == {}
+class TestPlayValueOverrides:
+    """play_value's per-call overrides are explicit keyword-only params, so a
+    typo'd name raises TypeError instead of being silently dropped (the old
+    **kwargs filtering behaviour)."""
 
-    def test_camel_case_passthrough(self):
-        ov = _build_overrides(scale="major", root="D3", octaves=2)
-        assert ov == {"scale": "major", "root": "D3", "octaves": 2}
+    @staticmethod
+    def _control_and_events():
+        events: list[dict] = []
 
-    def test_value_range_alias(self):
-        ov = _build_overrides(value_range=(0, 100))
-        assert ov == {"valueRange": [0, 100]}
+        class FakeRef:
+            current = 0
 
-    def test_unknown_keys_dropped(self):
-        ov = _build_overrides(scale="major", instrument="fm")  # instrument not valid
-        assert "instrument" not in ov
-        assert "scale" in ov
+        def set_events(updater):
+            events.append(updater(())[-1])
+
+        return _comp.TonesControl(set_events, FakeRef()), events
+
+    def test_no_overrides(self):
+        control, events = self._control_and_events()
+        control.play_value(42)
+        assert events[-1]["overrides"] == {}
+        assert events[-1]["value"] == 42.0
+
+    def test_named_overrides(self):
+        control, events = self._control_and_events()
+        control.play_value(1, scale="major", root="D3", octaves=2)
+        assert events[-1]["overrides"] == {
+            "scale": "major",
+            "root": "D3",
+            "octaves": 2,
+        }
+
+    def test_value_range_serialises_to_list(self):
+        control, events = self._control_and_events()
+        control.play_value(1, value_range=(0, 100))
+        assert events[-1]["overrides"] == {"valueRange": [0, 100]}
+
+    def test_scale_sequence_serialises_to_list(self):
+        control, events = self._control_and_events()
+        control.play_value(1, scale=(0, 2, 4, 7, 9))
+        assert events[-1]["overrides"] == {"scale": [0, 2, 4, 7, 9]}
+
+    def test_unknown_kwarg_raises(self):
+        control, _ = self._control_and_events()
+        with pytest.raises(TypeError):
+            control.play_value(1, instrument="fm")
 
     def test_descending(self):
-        ov = _build_overrides(descending=True)
-        assert ov == {"descending": True}
+        control, events = self._control_and_events()
+        control.play_value(1, descending=True)
+        assert events[-1]["overrides"] == {"descending": True}
 
 
 # ---------------------------------------------------------------------------

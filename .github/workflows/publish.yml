@@ -8,9 +8,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -24,7 +24,7 @@ jobs:
           npm ci
           npm run build
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v8
 
       - name: Build sdist and wheel
         run: uv build
@@ -32,7 +32,7 @@ jobs:
       - name: Verify the JS bundle made it into the wheel
         run: unzip -l dist/*.whl | grep -q '_js/dist/index.js'
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -44,7 +44,7 @@ jobs:
     permissions:
       id-token: write # required for PyPI trusted publishing (OIDC)
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/

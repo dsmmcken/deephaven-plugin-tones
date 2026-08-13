@@ -24,7 +24,8 @@ jobs:
           npm ci
           npm run build
 
-      - uses: astral-sh/setup-uv@v8
+      # setup-uv publishes no moving major tag (v8/v9/v10 don't resolve), so pin an exact release.
+      - uses: astral-sh/setup-uv@v10.0.0
 
       - name: Build sdist and wheel
         run: uv build

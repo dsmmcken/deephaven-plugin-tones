@@ -2,15 +2,16 @@
 name: deephaven-plugin-tones
 description: >-
   Add sound to a Deephaven Web IDE panel (@ui.component): button-click sounds,
-  success/failure earcons, or live musical sonification of a ticking Deephaven
-  table. Wraps Tone.js behind two Python entry points — use_tones() (a hook for
-  manual triggers) and table_tones() (a declarative element that auto-sonifies a
-  table). Use this skill whenever the user is building a deephaven.ui /
-  @ui.component panel and mentions audio, sound, sonification, earcons, audio
-  feedback, beeps, audible alerts, playing notes/chords/melodies, or turning
-  table data or ticks into sound — even if they never name the plugin. Also use
-  it whenever editing code that imports deephaven_plugin_tones or calls
-  use_tones(...) / table_tones(...).
+  success/failure earcons, jingles, or live musical sonification of a ticking
+  Deephaven table. Wraps Tone.js behind two Python entry points — tones (an
+  object you call directly to play notes, chords, melodies and progressions) and
+  use_table_tones_listener() (a hook that sonifies a ticking table). Use this
+  skill whenever the user is building a deephaven.ui / @ui.component panel and
+  mentions audio, sound, sonification, earcons, audio feedback, beeps, audible
+  alerts, playing notes/chords/melodies, or turning table data or ticks into
+  sound — even if they never name the plugin. Also use it whenever editing code
+  that imports deephaven_plugin_tones or calls tones.* /
+  use_table_tones_listener(...).
 ---
 
 # deephaven-plugin-tones
@@ -18,12 +19,13 @@ description: >-
 This plugin wraps Tone.js and gives a Deephaven Web IDE panel (`@ui.component`) two Python entry
 points for sound:
 
-- **`use_tones(...)`** — a render hook for **manual triggers** (button-click sounds, earcons). It
-  returns `(audio, audio_control)`: place `audio` in the tree, call `audio_control.play(...)` from
-  handlers.
-- **`table_tones(...)`** — a declarative **element** that **auto-sonifies a ticking table**. Drop it
-  in the tree like `ui.table(...)`; it makes sound on every tick. No handle — it has nothing to
-  trigger manually.
+- **`tones`** — an object you import and call directly for **manual triggers** (button-click
+  sounds, earcons, jingles). No hook to call, nothing to mount.
+- **`use_table_tones_listener(...)`** — a **render hook** that **sonifies a ticking table**. Call it
+  at the top of a component; it renders nothing and makes sound as rows arrive.
+
+Each trigger sends one event to the browser, where the plugin plays it. Sounds are
+self-terminating — there is no stop.
 
 ---
 
@@ -31,27 +33,33 @@ points for sound:
 
 ```python
 from deephaven import ui
-from deephaven_plugin_tones import use_tones
+from deephaven_plugin_tones import tones
 
 @ui.component
 def my_panel():
-    audio, audio_control = use_tones()        # 1. call at the TOP, like any hook
-    return ui.flex(
-        audio,                                 # 2. place audio in the tree (invisible)
-        ui.button("Play", on_press=lambda _e: audio_control.play("C4")),  # 3. trigger
-    )
+    return ui.button("Play", on_press=lambda _e: tones.play("C4"))
 
 panel = my_panel()
 ```
 
-Three rules:
+Two rules:
 
-1. **Call `use_tones()` at the top of the component** (it's a render hook — uses `use_state` /
-   `use_ref` internally, so it must run unconditionally).
-2. **Place the returned `audio` element in the render tree** — mounting it initialises the audio
-   engine client-side. It's invisible (zero layout space).
-3. **Call methods on `audio_control` from any handler** in scope — buttons, text-field changes,
-   callbacks, background threads.
+1. **Call `tones` from the render thread** — while a component renders, or from a handler it
+   triggered (`on_press`, `on_change`, …). That is the normal case and needs no ceremony.
+2. **From a background thread** (a table listener, a worker), queue it with `ui.use_render_queue`.
+   Calling `tones` directly off the render thread raises `TonesError`.
+
+```python
+@ui.component
+def alerting(table):
+    render_queue = ui.use_render_queue()
+
+    def on_update(update, is_replay):
+        render_queue(lambda: tones.play("C5"))   # listener runs off the render thread
+
+    ui.use_table_listener(table, on_update, [table])
+    return ui.table(table)
+```
 
 ---
 
@@ -60,16 +68,13 @@ Three rules:
 ```python
 @ui.component
 def audio_buttons():
-    audio, audio_control = use_tones(instrument="sine", volume=-8)
     return ui.flex(
-        audio,
-        ui.button("C", on_press=lambda _e: audio_control.play("C4")),
-        ui.button("Chord", on_press=lambda _e: audio_control.play_chord(["C4", "E4", "G4"])),
+        ui.button("C", on_press=lambda _e: tones.play("C4")),
+        ui.button("Chord", on_press=lambda _e: tones.play_chord(["C4", "E4", "G4"])),
         # "earcons" are just short play_sequence calls (see next section)
-        ui.button("OK", on_press=lambda _e: audio_control.play_sequence(
-            ["C5", "E5", "G5", "C6"], gap="16n", duration="16n",
+        ui.button("OK", on_press=lambda _e: tones.play_sequence(
+            ["C5", "E5", "G5", "C6"], duration="16n",
             attack=0.005, decay=0.12, sustain=0.0, release=0.25)),
-        ui.button("Stop", on_press=lambda _e: audio_control.stop()),
         direction="row",
     )
 ```
@@ -77,6 +82,29 @@ def audio_buttons():
 **Gesture gotcha:** The browser suspends its `AudioContext` until the user performs a real click.
 The **first button press** satisfies this requirement — you may not hear sound on that very first
 press. The second press onwards always works. There is nothing you need to code; it is automatic.
+
+---
+
+## Per-call sound options, and named voices
+
+Every sound option (`instrument`, `reverb_wet`, `volume`, … — the full list is in
+[Parameter reference](#parameter-reference)) can be passed to **any** trigger, for that call only:
+
+```python
+tones.play("C4", instrument="pluck", reverb_wet=0.5)
+```
+
+For a voice you use repeatedly, make a configured copy once and call it like `tones`:
+
+```python
+bell = tones.configure(instrument="metal", envelope_decay=1.2, envelope_sustain=0.0, volume=-14)
+bass = tones.configure(instrument="fm", root="C1", volume=-4)
+
+ui.button("Ding", on_press=lambda _e: bell.play("C6"))
+```
+
+`configure()` returns a new object; the original `tones` is unchanged. A misspelled option name
+raises `ValueError` listing the valid ones.
 
 ---
 
@@ -88,92 +116,133 @@ fits. The classic three:
 
 ```python
 # success — rising C5→E5→G5→C6, bright
-audio_control.play_sequence(["C5", "E5", "G5", "C6"], gap="16n", duration="16n",
-                            attack=0.005, decay=0.12, sustain=0.0, release=0.25)
+tones.play_sequence(["C5", "E5", "G5", "C6"], duration="16n",
+                    attack=0.005, decay=0.12, sustain=0.0, release=0.25)
 
 # failure — falling C5→G4→Eb4, minor
-audio_control.play_sequence(["C5", "G4", "Eb4"], gap="16n", duration="8n",
-                            attack=0.005, decay=0.12, sustain=0.0, release=0.25)
+tones.play_sequence(["C5", "G4", "Eb4"], duration="8n",
+                    attack=0.005, decay=0.12, sustain=0.0, release=0.25)
 
 # info — two-note C5→G5 ping
-audio_control.play_sequence(["C5", "G5"], gap="8n", duration="16n",
-                            attack=0.005, decay=0.12, sustain=0.0, release=0.25)
-
-# …or any custom figure
-audio_control.play_sequence(
-    ["D4", "F#4", "A4", "D5"],   # notes (strings, Hz, or {"midi": N})
-    gap="16n",                    # time between note onsets
-    duration="16n",               # per-note sustain
-    attack=0.005, decay=0.12, sustain=0.0, release=0.25,  # plucky ADSR
-)
-# Sequences are self-terminating — do not call audio_control.stop() after them.
+tones.play_sequence(["C5", "G5"], duration="16n",
+                    attack=0.005, decay=0.12, sustain=0.0, release=0.25)
 ```
 
-The `attack`/`decay`/`sustain`/`release` kwargs override only the stages you name (the rest keep
-the base envelope from `use_tones(...)`).
+The `attack`/`decay`/`sustain`/`release` kwargs override only the stages you name (the rest keep the
+base envelope).
 
 ### Translating descriptive requests into sound
 
 Users describe sounds in plain language ("a pleasant confirmation tone", "an ominous warning").
 Compose from these dimensions rather than asking for note names:
 
-| User says…                 | Reach for                                                                                       |
-| -------------------------- | ------------------------------------------------------------------------------------------------ |
-| pleasant, success, done    | rising major/pentatonic figure (`C5 E5 G5 C6`), plucky envelope (`attack=0.005, sustain=0.0`)   |
+| User says…                 | Reach for                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------------------- |
+| pleasant, success, done    | rising major/pentatonic figure (`C5 E5 G5 C6`), plucky envelope (`attack=0.005, sustain=0.0`)           |
 | error, failure, ominous    | falling minor figure (`C5 G4 Eb4`), low register, longer `duration`, optionally `instrument="sawtooth"` |
-| subtle, soft, ping, notify | one or two short high notes (`C5 G5`), `volume` lowered (e.g. `-16`), short release             |
-| urgent, alarm, attention   | fast repeated notes (small `gap` like `"32n"`), `"square"`/`"sawtooth"`, mid-high register      |
-| calm, ambient, dreamy      | `"sine"`/`"triangle"`, slow `envelope_attack`/`_release`, `reverb_wet` up (0.4–0.6), pentatonic |
-| plucky, percussive         | `attack=0.005, decay=0.1, sustain=0.0` (or `instrument="pluck"`/`"membrane"`)                   |
-| retro, chiptune, game-like | `"square"` or `"triangle"`, `filter=False` or high cutoff, tight envelope, no reverb            |
+| subtle, soft, ping, notify | one or two short high notes (`C5 G5`), `volume` lowered (e.g. `-16`), short release                     |
+| urgent, alarm, attention   | fast repeated notes (short `duration` like `"32n"`), `"square"`/`"sawtooth"`, mid-high register         |
+| calm, ambient, dreamy      | `"sine"`/`"triangle"`, slow `envelope_attack`/`_release`, `reverb_wet` up (0.4–0.6), pentatonic         |
+| plucky, percussive         | `attack=0.005, decay=0.1, sustain=0.0` (or `instrument="pluck"`/`"membrane"`)                           |
+| retro, chiptune, game-like | `"square"` or `"triangle"`, `filter=False` or high cutoff, tight envelope, no reverb                    |
+
+---
+
+## Melodies and jingles
+
+In `play_sequence`, **each note lasts its own `duration`**, and the next one starts when it ends —
+so the note list carries the rhythm. `gap` adds extra silence after every note (articulation); it
+defaults to `0`, i.e. legato.
+
+A sequence item is one of:
+
+| Item                          | Meaning                                                 |
+| ----------------------------- | ------------------------------------------------------- |
+| `"E4"`                        | a note, at the call's default `duration`                |
+| `("E4", 0.4)`                 | that note, held 0.4 s (or a note value like `"8n"`)     |
+| `("E4", 0.4, 0.7)`            | …with a velocity of 0.7                                 |
+| `None` / `(None, 0.25)`       | a **rest** — silent, but it still takes up its duration |
+| `["E4", "G#4", "B4"]`         | a **chord** (a list) — its notes sound together         |
+| `(["E4", "G#4", "B4"], 0.35)` | a chord with its own length                             |
+
+That is enough for a real tune:
+
+```python
+# Beethoven's fate motif: three shorts and a long, twice.
+tones.play_sequence(
+    [
+        ("G4", 0.15), ("G4", 0.15), ("G4", 0.15), ("Eb4", 0.8),
+        (None, 0.25),
+        ("F4", 0.15), ("F4", 0.15), ("F4", 0.15), ("D4", 1.0),
+    ],
+    gap=0.03,
+    instrument="triangle",
+)
+
+# An outro sting: one ringing chord, a pause, then four hits.
+_E = ["E4", "G#4", "B4", "E5"]
+tones.play_sequence(
+    [(_E, 0.35), (None, 0.55), (_E, 0.12), (_E, 0.12), (_E, 0.12), (_E, 0.5)],
+    gap=0.06, instrument="sawtooth",
+)
+```
+
+For a plain chord **progression** (evenly spaced chords, no melody), `play_chords` is simpler — it
+spaces the chords by `gap` and rings each for `duration`:
+
+```python
+tones.play_chords([["C4","E4","G4"], ["G3","B3","D4"], ["A3","C4","E4"], ["F3","A3","C4"]])
+```
 
 ---
 
 ## Sonify a ticking table
 
 ```python
-from deephaven_plugin_tones import table_tones
+from deephaven_plugin_tones import use_table_tones_listener
 
 @ui.component
 def market_sounds(ticking_table):
-    return ui.flex(
-        table_tones(
-            ticking_table,        # the table to sonify (first positional arg)
-            pitch="Price",        # numeric column to map to pitch
-            scale="pentatonic",   # "pentatonic"|"major"|"minor"|"chromatic"
-            root="C3",            # lowest note
-            octaves=3,            # pitch range spans 3 octaves
-            descending=False,     # True = higher value -> lower pitch
-            rate_limit_ms=100,    # throttle in ms (default 60)
-        ),                        # ← returns an element; inline it like ui.table
-        ui.table(ticking_table),  # the visible table — takes all space
-        direction="row",
+    use_table_tones_listener(
+        ticking_table,        # the table to sonify (first positional arg)
+        pitch="Price",        # numeric column to map to pitch
+        scale="pentatonic",   # "pentatonic"|"major"|"minor"|"chromatic"
+        root="C3",            # lowest note
+        octaves=3,            # pitch range spans 3 octaves
+        descending=False,     # True = higher value -> lower pitch
+        rate_limit_ms=100,    # min ms between sounds in mode="last" (default 60)
     )
+    return ui.table(ticking_table)   # the visible table — takes all the space
 ```
 
-`table_tones(...)` returns a bare element — inline it directly in the tree (just like
-`ui.table(...)`); there's no handle to assign. It renders no UI of its own and makes sound on each
-tick.
+The hook listens to the table on the **server** and sends one event per sounding row. It renders
+nothing, so call it at the top of the component like any hook (unconditionally, not inside an `if`).
+
+Only **added** rows sonify — existing history is never replayed, and an in-place modification is not
+a new event.
+
+**Auto-ranging:** with `pitch="Price"` (no explicit range) the plugin attaches live min/max columns
+to the table (an aggregation joined back onto every row), so the very first row already scales
+against the table's true range. Use `pitch=("Price", 0, 100)` to fix the input domain instead.
 
 **Table-only page gesture:** Because the plugin renders no UI, audio relies on the browser's sticky
 user activation — once the user has interacted with the page (opening/clicking the panel counts),
 audio unlocks and ticks drive it from then on. In a brand-new tab, one click anywhere in the panel
 unlocks audio.
 
-To re-target a different table or column, just re-render `table_tones(...)` with the new
-`table`/`pitch=` (e.g. drive them from component state). There is no separate runtime rebind call —
-the construction kwargs are live across renders.
+To re-target a different table or column, re-render with new arguments (e.g. drive them from
+component state); the listener is recreated when they change.
 
 ---
 
 ## Parameter reference
 
-`use_tones(...)` and `table_tones(...)` **share** the synth / effects / value→pitch params below.
-`table_tones(...)` adds the table-mode params (and the data-driven overload) in the following
-section. Pass only what you need; all have the defaults shown.
+The **sound options** below are shared: they are the arguments of `tones.configure(...)`, may be
+passed to any `tones` trigger for one call, and are also arguments of `use_table_tones_listener`.
+Pass only what you need; all have the defaults shown.
 
 ```python
-# shared synth / effects / mapping config (both entry points)
+# sound options (per-call on any trigger, on configure(), and on the table hook)
 instrument="sine", polyphony=8,
 envelope_attack=0.02, envelope_decay=0.1, envelope_sustain=0.6, envelope_release=1.2,
 detune=0, portamento=0,
@@ -186,8 +255,8 @@ chorus=False, chorus_frequency=1.5, chorus_depth=0.7, chorus_wet=0.5,
 ping_pong=False, ping_pong_time="8n", ping_pong_feedback=0.2, ping_pong_wet=0.5,
 limiter=True, limiter_threshold=-1,
 volume=-8, pan=0,
-# value → pitch mapping (used by play_value and by table_tones' pitch column)
-scale="pentatonic", root="C3", octaves=3, descending=False,
+# value → pitch mapping (used by play_value and by the table hook's pitch column)
+scale="pentatonic", root="C3", octaves=3, value_range=None, descending=False,
 ```
 
 ### Instrument / voice
@@ -238,55 +307,59 @@ scale="pentatonic", root="C3", octaves=3, descending=False,
 
 ### Value → pitch mapping
 
-| Param        | Type — default            | Description                                                                                        |
-| ------------ | ------------------------- | -------------------------------------------------------------------------------------------------- |
-| `scale`      | str/list — `"pentatonic"` | `"pentatonic"` `"major"` `"minor"` `"chromatic"`, or an explicit interval list like `[0,2,4,7,9]`. |
-| `root`       | str — `"C3"`              | Lowest note of the pitch range (bottom of the mapping).                                            |
-| `octaves`    | int — `3`                 | Number of octaves the value→pitch range spans.                                                     |
-| `descending` | bool — `False`            | `True` maps higher values to **lower** pitches.                                                    |
+| Param         | Type — default            | Description                                                                                        |
+| ------------- | ------------------------- | -------------------------------------------------------------------------------------------------- |
+| `scale`       | str/list — `"pentatonic"` | `"pentatonic"` `"major"` `"minor"` `"chromatic"`, or an explicit interval list like `[0,2,4,7,9]`. |
+| `root`        | str — `"C3"`              | Lowest note of the pitch range (bottom of the mapping).                                            |
+| `octaves`     | int — `3`                 | Number of octaves the value→pitch range spans.                                                     |
+| `value_range` | list — `None`             | `[lo, hi]` input domain for `play_value`. `None` scales against the values seen so far.            |
+| `descending`  | bool — `False`            | `True` maps higher values to **lower** pitches.                                                    |
 
 ---
 
-## `table_tones(...)` — table-mode params
+## `use_table_tones_listener(...)` — table-mode params
 
-These are **`table_tones`-only** (a manual `use_tones` handle has no table to drive). `table` is the
-first positional argument.
+These are **table-only** (a manual `tones` call has no table to read). `table` is the first
+positional argument.
 
-**The numeric-param overload.** Inside `table_tones`, every numeric effect param marked **DD** below
+**The numeric-param overload.** In the table hook, every numeric effect param marked **DD** below
 accepts three forms:
 
-| Form              | Meaning                                                                                                         |
-| ----------------- | --------------------------------------------------------------------------------------------------------------- |
-| `0.3` (number)    | static value                                                                                                    |
-| `"Vol"` (str)     | data-driven — auto-tracks the column's running min/max as input, maps into the param's **default** output range |
-| `("Vol", lo, hi)` | data-driven with an explicit **output** range `lo..hi`                                                          |
+| Form              | Meaning                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------ |
+| `0.3` (number)    | static value                                                                                           |
+| `"Vol"` (str)     | data-driven — the column's live min/max is the input, mapped into the param's **default** output range |
+| `("Vol", lo, hi)` | data-driven with an explicit **output** range `lo..hi`                                                 |
 
-Only live Tone signals can be data-driven: `detune`, `filter_frequency`, `filter_q`, `reverb_wet`,
-`delay_feedback`, `delay_wet`, `pan`, `distortion_wet`, `chorus_wet`, `ping_pong_wet`,
-`ping_pong_feedback`. Everything else is static (can't change per-note without
+Only live Tone signals can be data-driven (**DD**): `detune`, `filter_frequency`, `filter_q`,
+`reverb_wet`, `delay_feedback`, `delay_wet`, `pan`, `distortion_wet`, `chorus_wet`,
+`ping_pong_wet`, `ping_pong_feedback`. Everything else is static (it can't change per-note without
 rebuilding the graph). For `pitch`/`loudness` the tuple instead clamps the **input** domain (they
 map into the musical scale / dynamics, not a raw param). To vary timbre _categorically_ (swap
 instrument per row), use `voice` + `voices`.
 
 ### Table mode — shared (all table modes)
 
-| Param           | Type — default                   | Description                                                                                                     |
-| --------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `table`         | Table — _(required, positional)_ | A Deephaven `Table` to auto-sonify on tick.                                                                     |
-| `mode`          | str — `"last"`                   | `"last"` = one sound per tick (most-recent row); `"all"` = every new row that tick. Blink tables auto-detected. |
-| `rate_limit_ms` | int — `60`                       | Client-side throttle (ms) for table-tick sonification.                                                          |
+| Param           | Type — default                   | Description                                                                                           |
+| --------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `table`         | Table — _(required, positional)_ | A Deephaven `Table` to sonify on tick.                                                                |
+| `mode`          | str — `"last"`                   | `"last"` = one sound per tick (newest row); `"all"` = every row the tick added (newest 32 at most).   |
+| `rate_limit_ms` | int — `60`                       | Minimum ms between sounds in `"last"` mode; ticks that arrive sooner are dropped. Ignored by `"all"`. |
 
 ### Table mode — value → pitch sonify
 
-`pitch` alone is a one-dimensional sonify ("turn this column into sound"). Add `loudness`/`voice` for a multi-dimensional "duet". Note that `loudness`, `voice`, and `voices` only take effect **alongside `pitch`** — with no `pitch` column no value→pitch mappings are emitted and they are silently ignored.
+`pitch` alone is a one-dimensional sonify ("turn this column into sound"). Add `loudness`/`voice`
+for a multi-dimensional "duet". Note that `loudness`, `voice`, and `voices` only take effect
+**alongside `pitch`** — with no `pitch` column no value→pitch mappings are emitted and they are
+silently ignored.
 
-| Param           | Type — default       | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| --------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pitch`         | str / tuple — `None` | Numeric column → pitch (scale-quantised). `"Col"` (auto input range) or `("Col", lo, hi)` to clamp the input domain.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `loudness`      | str / tuple — `None` | Numeric column → loudness **and** note length (bigger = louder + longer). Tuple clamps input.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `voice`         | str — `None`         | Categorical column whose cell value selects the per-row instrument/voice (looked up in `voices`).                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `voices`        | dict — `None`        | Map of `voice` cell value → **flat** override dict, e.g. `{"BUY": {"instrument": "pluck"}, "SELL": {"instrument": "sawtooth", "envelope_attack": 0.01}}`. Override keys mirror the flat param names (`instrument`, `polyphony`, `envelope_attack`/`_decay`/`_sustain`/`_release`, `detune`, `portamento`, `volume`, `pan`, and `filter`/`reverb`/`delay`/`distortion`/`chorus`/`ping_pong` on-off toggles). Any stage you don't name keeps the base value; unmatched cell values fall back to the base config (or `voice_default`). |
-| `voice_default` | dict — `None`        | A flat override dict (same shape as a `voices` entry) applied to rows whose `voice` cell matches no key in `voices`. Defaults to the base config when unset. Only used alongside `voice`.                                                                                                                                                                                                                                                                                                                                           |
+| Param           | Type — default       | Description                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pitch`         | str / tuple — `None` | Numeric column → pitch (scale-quantised). `"Col"` (live auto range) or `("Col", lo, hi)` to clamp the input domain.                                                                                                                                                                                                                                                                                  |
+| `loudness`      | str / tuple — `None` | Numeric column → loudness **and** note length (bigger = louder + longer). Tuple clamps input.                                                                                                                                                                                                                                                                                                        |
+| `voice`         | str — `None`         | Categorical column whose cell value selects the per-row instrument/voice (looked up in `voices`).                                                                                                                                                                                                                                                                                                    |
+| `voices`        | dict — `None`        | Map of `voice` cell value → **flat** override dict, e.g. `{"BUY": {"instrument": "pluck"}, "SELL": {"instrument": "sawtooth", "envelope_attack": 0.01}}`. Override keys mirror the flat param names (`instrument`, `polyphony`, `envelope_attack`/`_decay`/`_sustain`/`_release`, `detune`, `portamento`, `volume`, `pan`, and `filter`/`reverb`/`delay`/`distortion`/`chorus`/`ping_pong` toggles). |
+| `voice_default` | dict — `None`        | A flat override dict (same shape as a `voices` entry) applied to rows whose `voice` cell matches no key in `voices`. Defaults to the base config when unset. Only used alongside `voice`.                                                                                                                                                                                                            |
 
 ### Table mode — chord trigger
 
@@ -304,43 +377,46 @@ instrument per row), use `voice` + `voices`.
 | ----------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sequence_column`       | str — `None`   | Trigger column: on each new truthy row, play `sequence_notes` as a timed melody/arpeggio. Use `mode="all"`. Combinable with `chord_column`.                          |
 | `sequence_notes`        | seq — `None`   | Melody — same note forms as `play_sequence` (`"C5"`, `("C5","8n")`, `("C5","8n",0.8)`). Default: ascending C arpeggio.                                               |
-| `sequence_gap`          | str — `"16n"`  | Onset spacing between notes (Tone.js time).                                                                                                                          |
+| `sequence_gap`          | num — `0`      | Extra silence after each note (Tone.js time); the notes' own durations set the rhythm.                                                                               |
 | `sequence_notes_column` | str — `None`   | Per-row column supplying the melody: a `String[]` or `String` like `"C5 E5 G5 C6"`. Overrides `sequence_notes`. Acts as the trigger if `sequence_column` is omitted. |
 
 ---
 
-## `audio_control` — full method cheat-sheet
-
-`audio_control` is the second element of the `use_tones()` tuple.
+## `tones` — full method cheat-sheet
 
 ```python
-audio, audio_control = use_tones()
+from deephaven_plugin_tones import tones
 
 # Play a single note
-audio_control.play("C4")
-audio_control.play(440.0)               # Hz
-audio_control.play({"midi": 60})        # MIDI
-audio_control.play("C4", duration="4n", velocity=0.8)
+tones.play("C4")
+tones.play(440.0)                       # Hz
+tones.play({"midi": 60})                # MIDI
+tones.play("C4", duration="4n", velocity=0.8)
 
 # Play multiple notes at once
-audio_control.play_chord(["C4", "E4", "G4"])
-audio_control.play_chord(["C4", "E4", "G4"], duration="4n")
+tones.play_chord(["C4", "E4", "G4"])
+tones.play_chord(["C4", "E4", "G4"], duration="4n")
+
+# Play a chord progression (evenly spaced)
+tones.play_chords([["C4","E4","G4"], ["G3","B3","D4"]], gap="4n", duration="2n")
+
+# Play a melody / arpeggio — each note lasts its own duration
+tones.play_sequence(["C4", "E4", "G4", "C5"])
+tones.play_sequence([("C4","8n"), ("E4","16n"), (None, 0.2), (["C4","E4"], 0.5)])
+# Earcons = short play_sequence calls (no preset methods); a success chime with a
+# plucky ADSR via the flat attack/decay/sustain/release kwargs:
+tones.play_sequence(["C5","E5","G5","C6"], duration="16n",
+                    attack=0.005, decay=0.12, sustain=0.0, release=0.25)
 
 # Map a numeric value to a pitch, then play
-audio_control.play_value(42.5)
-audio_control.play_value(price, scale="minor", descending=True)
+tones.play_value(42.5)
+tones.play_value(price, scale="minor", value_range=[0, 100], descending=True)
 
-# Play a timed arpeggio / melody (self-terminating)
-audio_control.play_sequence(["C4", "E4", "G4", "C5"])
-audio_control.play_sequence([("C4","8n"), ("E4","16n")], gap="16n")
-# Earcons = short play_sequence calls (no preset methods); e.g. a success chime
-# with a plucky ADSR via the flat attack/decay/sustain/release kwargs:
-audio_control.play_sequence(["C5","E5","G5","C6"], gap="16n", duration="16n",
-                            attack=0.005, decay=0.12, sustain=0.0, release=0.25)
-
-# Control
-audio_control.stop()              # stop all sounds immediately
-audio_control.set_volume(-12)     # live volume change (dB)
+# Any sound option, for one call…
+tones.play("C4", instrument="pluck", volume=-14)
+# …or kept as a named voice
+bell = tones.configure(instrument="metal", volume=-14)
+bell.play("C6")
 ```
 
 ---
@@ -349,8 +425,9 @@ audio_control.set_volume(-12)     # live volume change (dB)
 
 `note` accepts: `"C4"` (name), `440.0` (Hz), `{"midi": 60}` (MIDI).
 
-A sequence note item is a bare note value, or a tuple to attach timing: `("C5", "8n")` (note +
-duration) or `("C5", "8n", 0.8)` (note + duration + velocity).
+In a sequence, an item is a bare note value, a **list** of them (a chord), `None` (a rest), or a
+tuple attaching timing to any of those: `("C5", "8n")` (+ duration) or `("C5", "8n", 0.8)`
+(+ velocity).
 
 `duration` accepts Tone.js note values: `"16n"` `"8n"` `"4n"` `"2n"` `"1n"` (dotted: `"4n."`,
 triplet: `"8t"`), or a number of seconds.
@@ -369,24 +446,27 @@ pip install deephaven-plugin-tones
 Plugin import:
 
 ```python
-from deephaven_plugin_tones import use_tones, table_tones
+from deephaven_plugin_tones import tones, use_table_tones_listener
 ```
 
 ---
 
 ## Key facts to remember
 
-- `use_tones()` is a **render hook** — call it unconditionally at the top of `@ui.component`. It
-  returns `(audio, audio_control)`: place `audio` in the tree, call `audio_control` methods.
-- `table_tones(...)` is a **declarative element** — inline it in the tree like `ui.table(...)`. It
-  returns the element directly (no tuple, no handle); it auto-sonifies the table on each tick.
-- **One `AudioContext` per tab**: all tones elements share the same engine. Different
-  instruments each get their own voice chain and can play simultaneously.
+- `tones` is **not a hook** — import it and call it. There is no element to place in the tree and no
+  handle to thread through the component.
+- Call it **on the render thread** (during render or from a handler). From a background thread, wrap
+  the call in `ui.use_render_queue()`; otherwise it raises `TonesError`.
+- `use_table_tones_listener(...)` **is a hook** — call it unconditionally at the top of a
+  `@ui.component`. It renders nothing and returns nothing.
+- **Sounds are self-terminating.** There is no `stop()` and no `set_volume()`; use `volume=` (per
+  call or via `configure()`) to set loudness.
+- **One `AudioContext` per tab**: all events share the same engine. Different instruments each get
+  their own voice chain and can play simultaneously.
 - **User gesture required**: audio unlocks on the browser's sticky user activation (any in-page
-  interaction). The plugin renders no UI — table-only pages rely on the user having clicked the
-  panel; one click anywhere unlocks audio in a fresh tab.
-- Event queue is capped at 64 entries. `audio_control` methods are safe to call from background
-  threads.
+  interaction). Table-only pages rely on the user having clicked the panel; one click anywhere
+  unlocks audio in a fresh tab.
+- **Only added rows sonify** — history is not replayed, and in-place modifications are not events.
 - **Unknown column names raise `ValueError` at render time** (listing the table's available
   columns) — column typos surface as a server-side render error, not a silent browser failure.
-- **Sequences are self-terminating** — do not call `stop()` after a `play_sequence` (earcon).
+- **A misspelled sound option raises `ValueError`** listing the valid options.

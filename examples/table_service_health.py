@@ -54,7 +54,7 @@ in the panel once -- audio plays automatically from then on.
 
 from deephaven import time_table, ui
 
-from deephaven_plugin_tones import table_tones
+from deephaven_plugin_tones import use_table_tones_listener
 
 # ---------------------------------------------------------------------------
 # Simulated live service-metrics stream -- one sample per second.
@@ -78,57 +78,58 @@ _metrics = time_table("PT1S").update(
 @ui.component
 def service_health_panel():
     """
-    Layout: table_tones() (invisible) + the live metrics, side by side.
+    Layout: the live metrics, sonified by the listener hook.
 
-    table_tones() takes zero layout space; the table fills the panel.
+    use_table_tones_listener() renders nothing; the table fills the panel.
     """
-    return ui.flex(
-        # Invisible audio engine. One note per sample: Rps -> pitch, Latency ->
-        # echo tail (ping-pong feedback), ErrorRate -> distortion grit, Health ->
-        # which instrument plays. Effects below are enabled globally and then
-        # driven per-row by the column mappings.
-        table_tones(
-            table=_metrics,
-            mode="all",  # every sample speaks (not just the latest)
-            # ── four-dimensional mapping ───────────────────────────────────
-            pitch="Rps",  # throughput -> pitch (auto-ranged)
-            voice="Health",  # health    -> which instrument plays
-            voices={
-                # OK: smooth, rich, sustained pad.
-                "OK": {
-                    "instrument": "duosynth",
-                    "envelope_attack": 0.08,
-                    "envelope_release": 0.5,
-                },
-                # DEGRADED: hard, bell-like alarm voice -- cuts through.
-                "DEGRADED": {"instrument": "metal"},
+    # One note per sample: Rps -> pitch, Latency -> echo tail (ping-pong
+    # feedback), ErrorRate -> distortion grit, Health -> which instrument plays.
+    # Effects below are enabled globally and then driven per-row by the column
+    # mappings.
+    use_table_tones_listener(
+        _metrics,
+        mode="all",  # every sample speaks (not just the latest)
+        # ── four-dimensional mapping ───────────────────────────────────
+        pitch="Rps",  # throughput -> pitch (auto-ranged)
+        voice="Health",  # health    -> which instrument plays
+        voices={
+            # OK: smooth, rich, sustained pad.
+            "OK": {
+                "instrument": "duosynth",
+                "envelope_attack": 0.08,
+                "envelope_release": 0.5,
             },
-            # ── data-driven effects (explicit-range form) ──────────────────
-            ping_pong=True,
-            ping_pong_time="8n",
-            # latency -> echo feedback: more lag = longer, smearier tail.
-            ping_pong_feedback=("Latency", 0.1, 0.55),
-            ping_pong_wet=0.35,
-            distortion=True,
-            # error rate -> distortion wet: more errors = grittier tone.
-            distortion_wet=("ErrorRate", 0.0, 0.85),
-            distortion_amount=0.6,
-            # subtle global width on top of the per-row effects.
-            chorus=True,
-            chorus_depth=0.5,
-            chorus_wet=0.3,
-            # ── pitch mapping (auto-ranged) ────────────────────────────────
-            scale="pentatonic",
-            root="C3",
-            octaves=3,
-            # ── space + headroom ───────────────────────────────────────────
-            reverb_wet=0.2,
-            volume=-9,
-            # Pull the master ceiling down so the loud, fully-wet DEGRADED
-            # windows stay clean.
-            limiter_threshold=-2,
-            rate_limit_ms=0,  # mode="all": don't drop samples
-        ),
+            # DEGRADED: hard, bell-like alarm voice -- cuts through.
+            "DEGRADED": {"instrument": "metal"},
+        },
+        # ── data-driven effects (explicit-range form) ──────────────────
+        ping_pong=True,
+        ping_pong_time="8n",
+        # latency -> echo feedback: more lag = longer, smearier tail.
+        ping_pong_feedback=("Latency", 0.1, 0.55),
+        ping_pong_wet=0.35,
+        distortion=True,
+        # error rate -> distortion wet: more errors = grittier tone.
+        distortion_wet=("ErrorRate", 0.0, 0.85),
+        distortion_amount=0.6,
+        # subtle global width on top of the per-row effects.
+        chorus=True,
+        chorus_depth=0.5,
+        chorus_wet=0.3,
+        # ── pitch mapping (auto-ranged) ────────────────────────────────
+        scale="pentatonic",
+        root="C3",
+        octaves=3,
+        # ── space + headroom ───────────────────────────────────────────
+        reverb_wet=0.2,
+        volume=-9,
+        # Pull the master ceiling down so the loud, fully-wet DEGRADED
+        # windows stay clean.
+        limiter_threshold=-2,
+        rate_limit_ms=0,  # mode="all": don't drop samples
+    )
+
+    return ui.flex(
         # Live metrics table -- fills the panel.
         ui.table(_metrics),
         direction="row",

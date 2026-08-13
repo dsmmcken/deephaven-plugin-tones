@@ -31,7 +31,7 @@ instruments as the market takes the bid or lifts the offer.
 
 **Auto-ranging**: no explicit ranges are specified (``pitch="Price"`` and
 ``loudness="Volume"`` rather than the tuple form ``pitch=("Price", lo, hi)``), so
-the client auto-tracks each column's running min/max -- pitch and loudness scale
+the server tracks each column's live min/max -- pitch and loudness scale
 themselves to the data as it arrives.
 
 **Audio note**: the browser requires a user interaction before audio can play.
@@ -45,7 +45,7 @@ Deephaven query-language strings.
 
 from deephaven import time_table, ui
 
-from deephaven_plugin_tones import table_tones
+from deephaven_plugin_tones import use_table_tones_listener
 
 # ---------------------------------------------------------------------------
 # Simulated live trade stream -- one trade every 500 ms.
@@ -69,44 +69,44 @@ _trades = time_table("PT1S").update(
 @ui.component
 def trade_tones_panel():
     """
-    Layout: table_tones() (invisible) + the live trade blotter, side by side.
+    Layout: the live trade blotter, sonified by the listener hook.
 
-    table_tones() takes zero layout space; the table fills the panel.
+    use_table_tones_listener() renders nothing; the table fills the panel.
     """
-    return ui.flex(
-        # Invisible audio engine. Subscribes to `_trades` client-side and plays
-        # one note per trade, mapping three columns onto three sound channels.
-        table_tones(
-            table=_trades,
-            mode="all",  # every trade speaks (not just the latest)
-            # ── three-dimensional mapping ──────────────────────────────────
-            pitch="Price",  # price -> pitch
-            loudness="Volume",  # volume -> loudness + note length
-            voice="Side",  # side  -> which instrument plays
-            voices={
-                # BUY: bright, percussive, plucky -- a marimba/mallet feel.
-                "BUY": {"instrument": "pluck"},
-                # SELL: darker, sustained, bowed -- a cello-ish saw with a
-                # slow-ish attack and real sustain. Override keys are flat.
-                "SELL": {
-                    "instrument": "sawtooth",
-                    "envelope_attack": 0.12,
-                    "envelope_decay": 0.20,
-                    "envelope_sustain": 0.7,
-                    "envelope_release": 0.4,
-                },
+    # Plays one note per trade, mapping three columns onto three sound channels.
+    use_table_tones_listener(
+        _trades,
+        mode="all",  # every trade speaks (not just the latest)
+        # ── three-dimensional mapping ──────────────────────────────────
+        pitch="Price",  # price -> pitch
+        loudness="Volume",  # volume -> loudness + note length
+        voice="Side",  # side  -> which instrument plays
+        voices={
+            # BUY: bright, percussive, plucky -- a marimba/mallet feel.
+            "BUY": {"instrument": "pluck"},
+            # SELL: darker, sustained, bowed -- a cello-ish saw with a
+            # slow-ish attack and real sustain. Override keys are flat.
+            "SELL": {
+                "instrument": "sawtooth",
+                "envelope_attack": 0.12,
+                "envelope_decay": 0.20,
+                "envelope_sustain": 0.7,
+                "envelope_release": 0.4,
             },
-            # ── pitch mapping (auto-ranged: no explicit pitch range given) ──
-            scale="pentatonic",
-            root="C3",
-            octaves=3,
-            # ── shared voicing / space ──────────────────────────────────────
-            reverb_decay=2.5,
-            reverb_wet=0.22,
-            reverb_predelay=0.01,
-            volume=-9,
-            rate_limit_ms=0,  # mode="all": don't drop trades
-        ),
+        },
+        # ── pitch mapping (auto-ranged: no explicit pitch range given) ──
+        scale="pentatonic",
+        root="C3",
+        octaves=3,
+        # ── shared voicing / space ──────────────────────────────────────
+        reverb_decay=2.5,
+        reverb_wet=0.22,
+        reverb_predelay=0.01,
+        volume=-9,
+        rate_limit_ms=0,  # mode="all": don't drop trades
+    )
+
+    return ui.flex(
         # Live trade blotter -- fills the panel.
         ui.table(_trades),
         direction="row",

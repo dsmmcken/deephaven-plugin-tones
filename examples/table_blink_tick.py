@@ -32,7 +32,7 @@ from deephaven import empty_table, ui
 from deephaven.execution_context import get_exec_ctx
 from deephaven.stream.table_publisher import table_publisher
 
-from deephaven_plugin_tones import table_tones
+from deephaven_plugin_tones import use_table_tones_listener
 
 # ---------------------------------------------------------------------------
 # Blink table + publisher
@@ -49,7 +49,31 @@ _blink_table, _publisher = table_publisher(
 
 @ui.component
 def blink_tick_panel():
-    """Layout: invisible table_tones() engine + the live blink table."""
+    """Layout: the live blink table, sonified by the listener hook."""
+
+    use_table_tones_listener(
+        _blink_table,
+        # Fixed pitch -> identical soft tick every time.
+        pitch=("Tick", 0, 1),
+        mode="last",  # one soft tick per publish cycle
+        scale="pentatonic",
+        root="C5",
+        octaves=1,
+        # Soft bell: FM synthesis is the classic bell timbre -- a struck
+        # (instant) attack, no sustain, and a long natural ring-out.
+        instrument="fm",
+        envelope_attack=0.001,
+        envelope_decay=1.2,
+        envelope_sustain=0.0,
+        envelope_release=1.5,
+        # Gentle reverb adds warmth and space; no feedback delay -- a bell
+        # just rings and fades, it doesn't echo rhythmically.
+        reverb_decay=2.5,
+        reverb_wet=0.3,
+        reverb_predelay=0.02,
+        volume=-12,
+        rate_limit_ms=0,
+    )
 
     def _start_publishing():
         """use_effect: spawn the publisher thread; return a cleanup that stops it."""
@@ -71,29 +95,6 @@ def blink_tick_panel():
     ui.use_effect(_start_publishing, [])
 
     return ui.flex(
-        table_tones(
-            table=_blink_table,
-            # Fixed pitch -> identical soft tick every time.
-            pitch=("Tick", 0, 1),
-            mode="last",  # blink table auto-detected -> one soft tick per cycle
-            scale="pentatonic",
-            root="C5",
-            octaves=1,
-            # Soft bell: FM synthesis is the classic bell timbre -- a struck
-            # (instant) attack, no sustain, and a long natural ring-out.
-            instrument="fm",
-            envelope_attack=0.001,
-            envelope_decay=1.2,
-            envelope_sustain=0.0,
-            envelope_release=1.5,
-            # Gentle reverb adds warmth and space; no feedback delay -- a bell
-            # just rings and fades, it doesn't echo rhythmically.
-            reverb_decay=2.5,
-            reverb_wet=0.3,
-            reverb_predelay=0.02,
-            volume=-12,
-            rate_limit_ms=0,
-        ),
         ui.table(_blink_table),
         direction="row",
         flex="1",

@@ -37,7 +37,7 @@ wheels = [
 
 [[package]]
 name = "deephaven-core"
-version = "41.7"
+version = "42.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deephaven-plugin" },
@@ -49,7 +49,7 @@ dependencies = [
     { name = "pyarrow" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/13/4f/1ef827355bea67afaf77c67e931e29a065d45f945ceba91faee0a0bef41b/deephaven_core-41.7-py3-none-any.whl", hash = "sha256:21b3fa5d6857d1649d70764a0022b0c2f5d669839f9bfe73f14571aeec037b94", size = 220522, upload-time = "2026-05-22T17:22:44.131Z" },
+    { url = "https://files.pythonhosted.org/packages/42/04/b3b4d6983180071d6da0df2b71241627de150ad1dea829428bc890766f1f/deephaven_core-42.4-py3-none-any.whl", hash = "sha256:2673cb1b4f6d002a3e9a8c6632e1e213c0f97f81ab58b0c02a1c73a1eb21e6c2", size = 226419, upload-time = "2026-08-07T21:14:00.563Z" },
 ]
 
 [package.optional-dependencies]
@@ -60,16 +60,16 @@ autocomplete = [
 
 [[package]]
 name = "deephaven-plugin"
-version = "0.6.0"
+version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/3a/f7/daf94930569a8f1cba6fe43ea8a8bab9dc51a497c993d33caefaa2afea54/deephaven-plugin-0.6.0.tar.gz", hash = "sha256:07c6e16501e82cf8b92766f3f0d58fbc626317b3a29e3217dfe7428a2ab75629", size = 8418, upload-time = "2023-12-13T17:19:47.74Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/2d/83daad7d12809e77a81b18104358375da9bfd5d901eb9ee6519e196c8ea2/deephaven_plugin-0.8.0.tar.gz", hash = "sha256:1716646c4e534fcda3128043665d2d0fa6000d02fbf89bc31787cf6d6a60394e", size = 8953, upload-time = "2026-08-04T17:14:47.313Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/f2/c9a1053ba678fbfa0aa6398c68e674d3bfb3df16be1265054e6e8b149267/deephaven_plugin-0.6.0-py3-none-any.whl", hash = "sha256:2bcf31557f47f6c9d773b7f49c0396c327cc5e413c25c17ffd2cb3373d6dae32", size = 9493, upload-time = "2023-12-13T17:19:46.162Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/af/ef6abb34ccd78e8a6ca32b210755427cc4476b9bd46868abf7b96e568918/deephaven_plugin-0.8.0-py3-none-any.whl", hash = "sha256:05a25894f7ae66afdd93b4783bb51692ff7d014507f1cfbb6d8b4e437a3779f9", size = 10065, upload-time = "2026-08-04T17:14:46.47Z" },
 ]
 
 [[package]]
 name = "deephaven-plugin-tones"
-version = "0.1.0"
+version = "0.2.0"
 source = { virtual = "." }
 dependencies = [
     { name = "deephaven-core" },
@@ -92,7 +92,7 @@ dev = [
 requires-dist = [
     { name = "deephaven-core", specifier = ">=0.35.1" },
     { name = "deephaven-plugin", specifier = ">=0.6.0" },
-    { name = "deephaven-plugin-ui", specifier = ">=0.37.0" },
+    { name = "deephaven-plugin-ui", specifier = ">=0.41.0" },
     { name = "deephaven-plugin-utilities", specifier = ">=0.0.2" },
 ]
 
@@ -108,7 +108,7 @@ dev = [
 
 [[package]]
 name = "deephaven-plugin-ui"
-version = "0.37.0"
+version = "0.41.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deephaven-core" },
@@ -120,9 +120,9 @@ dependencies = [
     { name = "pyjsonpatch" },
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/50/38/b882a5ec00a24313102bb1f4083bac6b07633054224bab12631896525784/deephaven_plugin_ui-0.37.0.tar.gz", hash = "sha256:cae373aeba610d2dc004d72d3c7062c68313bd0b8bf7c101d36d76093befb81a", size = 1059078, upload-time = "2026-05-20T21:04:37.97Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/a4/77ee0afb38c8529419e4449d9a3f81340e69c3c3d0142c1edb818dd22aaf/deephaven_plugin_ui-0.41.0.tar.gz", hash = "sha256:6c16dd58c377db4603b3be7f0aa8d6ab4e734605a96b420820d275f378671af3", size = 1078917, upload-time = "2026-08-12T15:44:20.389Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/99/2f/b8f555010a6bf38fc4539d7aa070a7a3da8e9ed1f9248c27b580525b7dcf/deephaven_plugin_ui-0.37.0-py3-none-any.whl", hash = "sha256:c718162024ea6aebabe3f7477e0a630397848ba01956736b24e272ece54ecb59", size = 1181515, upload-time = "2026-05-20T21:04:36.487Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/42/66d1cef3b1983abbfbd74755256e62f74cb1e7e3063c44f57f5382ac238b/deephaven_plugin_ui-0.41.0-py3-none-any.whl", hash = "sha256:76d15a152aaed36a487a260e73dd0d1f8ee3008c9a5f1581034312a78b9b9951", size = 1204371, upload-time = "2026-08-12T15:44:19.073Z" },
 ]
 
 [[package]]
@@ -139,7 +139,7 @@ wheels = [
 
 [[package]]
 name = "deephaven-server"
-version = "41.7"
+version = "42.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -148,7 +148,7 @@ dependencies = [
     { name = "jpy" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/44/bb/479eb406aa9a6adc9cdff1e841fd9422138eee78e7d605a77b00848aa35b/deephaven_server-41.7-py3-none-any.whl", hash = "sha256:97204d0303536c6c11f84c5c75b1a3f94adbdeda024cdff1920c6721a053b35c", size = 249707989, upload-time = "2026-05-22T17:22:57.509Z" },
+    { url = "https://files.pythonhosted.org/packages/25/e0/af4cb05b9e94e9bdadf71bc72dadd81e4c64fc591f8ec43ec66ad52d0b2e/deephaven_server-42.4-py3-none-any.whl", hash = "sha256:00c76da0af0076ef952dda93a0f10de4ae239acc5939e782076bee369b16639f", size = 250578601, upload-time = "2026-08-07T21:14:20.093Z" },
 ]
 
 [[package]]
@@ -165,7 +165,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [

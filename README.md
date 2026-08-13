@@ -4,13 +4,12 @@
 [deephaven.ui](https://deephaven.io/community/oss/ui/) panels in the
 Deephaven Web IDE. It wraps [Tone.js](https://tonejs.github.io/) behind two Python entry points:
 
-- `use_tones(...)` is a render hook for manual triggers. It returns `(audio, audio_control)`:
-  place `audio` in the tree (it renders no visible DOM and takes no layout space), then call
-  `audio_control` methods (`play`, `play_chord`, `play_sequence`, `play_value`, `stop`,
-  `set_volume`) from any event handler or background thread.
-- `table_tones(...)` is a declarative element that sonifies a ticking table: map a column
-  to pitch (and optionally loudness or voice), or fire chord and melody triggers per row. The server
-  auto-tracks each column's live min/max range. Drop it in the tree like `ui.table(...)`.
+- `tones` is an object you import and call directly — `tones.play("C4")`,
+  `play_chord`, `play_chords`, `play_sequence`, `play_value`. There is no hook to call and nothing
+  to mount; each call sends an event that the browser plays. Sounds are self-terminating.
+- `use_table_tones_listener(...)` is a render hook that sonifies a ticking table: map a column to
+  pitch (and optionally loudness or voice), or fire chord and melody triggers per row. The server
+  auto-tracks each column's live min/max range and turns each new row into sound.
 
 > [!NOTE]
 > Browsers block audio until you interact with the page. Click anywhere in the browser tab
@@ -26,52 +25,57 @@ server:
 pip install deephaven-plugin-tones
 ```
 
-The plugin registers itself automatically. Once the server is back up, `use_tones` and
-`table_tones` are importable in any `deephaven.ui` panel.
+The plugin registers itself automatically. Once the server is back up, `tones` and
+`use_table_tones_listener` are importable in any `deephaven.ui` panel.
 
 ## Use it
 
 ```python
 from deephaven import ui
-from deephaven_plugin_tones import use_tones
+from deephaven_plugin_tones import tones
 
 @ui.component
 def my_panel():
-    audio, audio_control = use_tones()   # 1. call at the top, like any render hook
     return ui.flex(
-        audio,                           # 2. place audio in the tree (invisible, no layout space)
-        ui.button("C", on_press=lambda _e: audio_control.play("C4")),  # 3. trigger from a handler
-        ui.button("Stop", on_press=lambda _e: audio_control.stop()),
+        ui.button("C", on_press=lambda _e: tones.play("C4")),
+        ui.button("Chord", on_press=lambda _e: tones.play_chord(["C4", "E4", "G4"])),
         direction="row",
     )
 
 my_panel = my_panel()                    # a top-level variable becomes an openable panel
 ```
 
-`use_tones()` returns the `audio` element to place in the tree (it mounts the audio engine without
-affecting layout) and the `audio_control` handle you call from any handler. The browser unlocks
-audio on the first user interaction with the panel, so the very first button press may be silent;
-every press after that plays immediately.
+Call `tones` from the render thread — while a component renders, or from a handler it triggered.
+From a background thread (a table listener, a worker), queue it with `ui.use_render_queue`. The
+browser unlocks audio on the first user interaction with the panel, so the very first button press
+may be silent; every press after that plays immediately.
 
-Sonify a ticking table with `table_tones(...)`, a declarative element you inline like
-`ui.table(...)`:
+Any sound option can ride along with a single call, or be kept as a named voice:
 
 ```python
-from deephaven_plugin_tones import table_tones
+tones.play("C4", instrument="pluck", reverb_wet=0.5)
+
+bell = tones.configure(instrument="metal", volume=-14)
+bell.play("C6")
+```
+
+Sonify a ticking table with the `use_table_tones_listener(...)` hook:
+
+```python
+from deephaven_plugin_tones import use_table_tones_listener
 
 @ui.component
 def market_sounds(prices):
-    return ui.flex(
-        table_tones(prices, pitch="Price", scale="pentatonic", root="C3", octaves=3),
-        ui.table(prices),
-        direction="row",
-    )
+    use_table_tones_listener(prices, pitch="Price", scale="pentatonic", root="C3", octaves=3)
+    return ui.table(prices)
 ```
 
 There are no preset "earcon" methods; a success or error chime is just a short `play_sequence`
-with a plucky envelope. See [SKILL.md](./skills/deephaven-plugin-tones/SKILL.md) for the full API:
-every `use_tones()` / `table_tones()` parameter, the data-driven effect params, multi-dimensional
-"duet" mode, chord/sequence triggers, and the method cheat-sheet.
+with a plucky envelope. In a sequence each note lasts its own duration, a list is a chord and
+`None` is a rest — enough to play a real tune. See
+[SKILL.md](./skills/deephaven-plugin-tones/SKILL.md) for the full API: every sound option, the
+trigger methods, table-sonification modes, data-driven effect params, multi-dimensional "duet"
+mode, and the gotchas.
 
 ## Let an AI write the sound design
 
@@ -101,14 +105,16 @@ The [`examples/`](./examples) directory has ready-to-run panels:
 
 | Script                                                  | Demonstrates                                            |
 | ------------------------------------------------------- | ------------------------------------------------------- |
-| `buttons_demo.py`                                       | Button-driven `play` / `play_chord` / earcons / `stop`  |
+| `buttons_demo.py`                                       | Button-driven `play` / `play_chord` / earcons           |
+| `jingles_jukebox.py`                                    | Tunes built from durations, chords and rests            |
 | `table_tones_demo.py`                                   | Value-to-pitch table sonification (`pitch=`)            |
-| `table_blink_tick.py`                                   | BLINK-table tick sonification (`mode="last"` / `"all"`) |
+| `table_blink_tick.py`                                   | Blink-table tick sonification (`mode="last"` / `"all"`) |
 | `table_multi_tones.py`                                  | Multi-dimensional "duet" (pitch + loudness + voice)     |
 | `table_chord_trigger.py` / `table_chord_progression.py` | Chord triggers + per-row chord(s) from a table cell     |
 | `table_chords_from_cell.py`                             | Whole chord progression stored in a single cell         |
 | `table_sequence_trigger.py` / `table_twinkle.py`        | Melodic sequence triggers                               |
 | `table_melody_from_cell.py`                             | Per-row melody from a table cell                        |
+| `table_fx_showcase.py` / `table_service_health.py`      | Data-driven effect params                               |
 
 ## Documentation
 

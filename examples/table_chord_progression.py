@@ -14,18 +14,18 @@ single cell can hold **one chord** or a **whole progression**:
   ``chord_gap`` spaces them into a cadence within that single tick.
 * ``""`` (empty string)          -- a rest (no chord this tick).
 
-``table_tones(chord_notes_column="Chord", mode="all")`` -- the notes column
-doubles as the trigger, so any row with a non-empty ``Chord`` plays it; empty
-rows are silent. (You can still pass a separate boolean ``chord_column`` gate
-and/or a static ``chords`` fallback.) ``ui.table(..., format_=...)`` highlights
-the rows that will sound.
+``use_table_tones_listener(_ticking, chord_notes_column="Chord", mode="all")`` --
+the notes column doubles as the trigger, so any row with a non-empty ``Chord``
+plays it; empty rows are silent. (You can still pass a separate boolean
+``chord_column`` gate and/or a static ``chords`` fallback.)
+``ui.table(..., format_=...)`` highlights the rows that will sound.
 
 **Audio note**: browsers require a user interaction before audio can play. Opening or clicking anywhere in the panel satisfies this -- there is no separate button.
 """
 
 from deephaven import time_table, ui
 
-from deephaven_plugin_tones import table_tones
+from deephaven_plugin_tones import use_table_tones_listener
 
 # ---------------------------------------------------------------------------
 # Ticking table -- one step per second, cycling I-V-vi-IV with two rests.
@@ -44,26 +44,27 @@ _ticking = time_table("PT1S").update(
 
 @ui.component
 def chord_progression_panel():
-    """Layout: invisible table_tones() engine + the live table with blue chord rows."""
+    """Layout: the live table with blue chord rows, sonified by the hook."""
+    use_table_tones_listener(
+        _ticking,
+        mode="all",  # evaluate every new row
+        chord_notes_column="Chord",  # per-row chord(s); doubles as the trigger
+        chord_gap="4n",  # space multi-chord cells into a cadence
+        chord_duration="2n",  # each chord rings for a half note
+        # Warm pad-ish voice.
+        instrument="triangle",
+        envelope_attack=0.04,
+        envelope_decay=0.3,
+        envelope_sustain=0.6,
+        envelope_release=1.4,
+        reverb_decay=3.0,
+        reverb_wet=0.3,
+        reverb_predelay=0.01,
+        volume=-12,
+        rate_limit_ms=0,
+    )
+
     return ui.flex(
-        table_tones(
-            table=_ticking,
-            mode="all",  # evaluate every new row
-            chord_notes_column="Chord",  # per-row chord(s); doubles as the trigger
-            chord_gap="4n",  # space multi-chord cells into a cadence
-            chord_duration="2n",  # each chord rings for a half note
-            # Warm pad-ish voice.
-            instrument="triangle",
-            envelope_attack=0.04,
-            envelope_decay=0.3,
-            envelope_sustain=0.6,
-            envelope_release=1.4,
-            reverb_decay=3.0,
-            reverb_wet=0.3,
-            reverb_predelay=0.01,
-            volume=-12,
-            rate_limit_ms=0,
-        ),
         # Highlight the rows that carry a chord (non-empty Chord string).
         ui.table(
             _ticking,

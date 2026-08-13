@@ -12,10 +12,9 @@ appears in the panel list.
 1. A ``time_table`` emits a new row every 500 ms.
 2. An ``update`` formula adds column ``Y`` -- a sine wave scaled to 10-90.
    Higher values map to higher pitches (pentatonic scale, C3 root, 3 octaves).
-3. ``table_tones(table=ticking, pitch="Y", ...)`` subscribes to the table
-   client-side via the JSAPI viewport.  Each new row triggers a note.
-4. ``ui.table(ticking)`` displays the live table; ``table_tones(...)`` takes **zero**
-   layout space (returns null in the browser).
+3. ``use_table_tones_listener(ticking, pitch="Y", ...)`` listens to the table on
+   the server. Each new row triggers a note.
+4. ``ui.table(ticking)`` displays the live table; the hook renders nothing.
 
 **Audio note (important)**: the browser requires a user interaction before
 audio can play. This demo has *no* buttons and renders no UI of its own, so if
@@ -31,7 +30,7 @@ full pentatonic range audibly.
 
 from deephaven import time_table, ui
 
-from deephaven_plugin_tones import table_tones
+from deephaven_plugin_tones import use_table_tones_listener
 
 # ---------------------------------------------------------------------------
 # Ticking source table
@@ -48,30 +47,29 @@ _ticking = time_table("PT1S").update(["Y = (int)(50 + 40*Math.sin(0.4*ii))"])
 @ui.component
 def tone_table_panel():
     """
-    Layout: table_tones() (invisible, left) + live table (right) in a row flex.
+    Layout: the live table, with the sonification hook running alongside it.
 
-    table_tones() takes zero layout space and renders nothing. Audio starts once the
-    browser has seen a user interaction (opening/clicking the panel is enough).
+    use_table_tones_listener() renders nothing. Audio starts once the browser
+    has seen a user interaction (opening/clicking the panel is enough).
     """
+    # Listens to `_ticking` server-side and plays a note on every new row,
+    # mapping column Y onto the pentatonic scale.
+    use_table_tones_listener(
+        _ticking,
+        pitch=("Y", 0, 100),
+        scale="pentatonic",
+        root="C3",
+        octaves=3,
+        descending=False,
+        instrument="sine",
+        reverb_decay=2,
+        reverb_wet=0.20,
+        reverb_predelay=0.01,
+        volume=-10,
+        rate_limit_ms=400,  # 500 ms ticks -- leave headroom so we don't double-fire
+    )
+
     return ui.flex(
-        # table_tones() renders nothing -- zero flex space, zero DOM nodes.
-        # It subscribes to `ticking` client-side via JSAPI and plays a note
-        # on every new row, mapping column Y to the pentatonic scale.
-        table_tones(
-            table=_ticking,
-            pitch=("Y", 0, 100),
-            scale="pentatonic",
-            root="C3",
-            octaves=3,
-            descending=False,
-            instrument="sine",
-            reverb_decay=2,
-            reverb_wet=0.20,
-            reverb_predelay=0.01,
-            volume=-10,
-            rate_limit_ms=400,  # 500 ms ticks -- leave headroom so we don't double-fire
-        ),
-        # Live table view -- this fills the panel
         ui.table(_ticking),
         direction="row",
         flex="1",

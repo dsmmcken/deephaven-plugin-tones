@@ -17,9 +17,9 @@
  * • Test hook: window.__deephavenTones (always-on, lightweight).
  */
 
-import Log from '@deephaven/log';
+import Log from "@deephaven/log";
 
-const log = Log.module('ToneEngine');
+const log = Log.module("ToneEngine");
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -70,7 +70,12 @@ export interface LimiterConfig {
   threshold?: number;
 }
 
-export type ScaleType = 'pentatonic' | 'major' | 'minor' | 'chromatic' | number[];
+export type ScaleType =
+  | "pentatonic"
+  | "major"
+  | "minor"
+  | "chromatic"
+  | number[];
 
 export interface ToneConfig {
   instrument?: string;
@@ -96,7 +101,14 @@ export interface ToneConfig {
 }
 
 export interface NoteSpec {
-  note: string | number | { midi: number };
+  // An array is a chord (its notes sound together); null is a REST, which takes
+  // up its duration without sounding.
+  note:
+    | string
+    | number
+    | { midi: number }
+    | Array<string | number | { midi: number }>
+    | null;
   duration?: string | number;
   velocity?: number;
 }
@@ -144,17 +156,17 @@ export interface ToneTestHook {
 
 function getHook(): ToneTestHook {
   // SSR-safe: only touch globalThis in browser context
-  if (typeof globalThis !== 'undefined') {
+  if (typeof globalThis !== "undefined") {
     const g = globalThis as Record<string, unknown>;
-    if (!g['__deephavenTones']) {
-      g['__deephavenTones'] = {
+    if (!g["__deephavenTones"]) {
+      g["__deephavenTones"] = {
         started: false,
         loaded: false,
         log: [],
         activeVoices: 0,
       } as ToneTestHook;
     }
-    return g['__deephavenTones'] as ToneTestHook;
+    return g["__deephavenTones"] as ToneTestHook;
   }
   // Fallback (SSR / non-browser): return a throwaway object
   return { started: false, loaded: false, log: [], activeVoices: 0 };
@@ -176,7 +188,7 @@ function hookLog(record: ToneTestRecord): void {
 let tonePromise: Promise<ToneModule> | null = null;
 
 export function loadTone(): Promise<ToneModule> {
-  return (tonePromise ??= import('tone').then(m => {
+  return (tonePromise ??= import("tone").then((m) => {
     getHook().loaded = true;
     return m;
   }));
@@ -238,25 +250,6 @@ const runningRanges = new Map<string, RunningRange>();
 
 let started = false;
 
-// ─── Mount refcount ─────────────────────────────────────────────────────────
-// The engine is a module-level singleton shared by every mounted view. We
-// refcount mounts so the LAST view to unmount tears the engine down (disposes
-// all cached chains / Tone nodes). Without this, chains accumulate for the page
-// lifetime. acquire/release are balanced and StrictMode-safe (double
-// mount/unmount nets to zero).
-let mountCount = 0;
-
-export function acquire(): void {
-  mountCount += 1;
-}
-
-export function release(): void {
-  mountCount = Math.max(0, mountCount - 1);
-  if (mountCount === 0) {
-    dispose();
-  }
-}
-
 // ─── Active-voice decay timers ───────────────────────────────────────────────
 // Each trigger bumps the (test-hook) activeVoices counter and schedules a
 // decrement. We track the timer ids so dispose() can clear any still-pending —
@@ -282,7 +275,7 @@ let meter: ToneModule | null = null;
 
 function maybeSetupProbe(Tone: ToneModule): void {
   const g = globalThis as Record<string, unknown>;
-  if (!g['__deephavenTonesProbe'] || meter != null) return;
+  if (!g["__deephavenTonesProbe"] || meter != null) return;
   try {
     meter = new Tone.Meter({ normalRange: false, smoothing: 0 });
     Tone.getDestination().connect(meter);
@@ -293,7 +286,7 @@ function maybeSetupProbe(Tone: ToneModule): void {
     hook.getOutputLevel = () => {
       try {
         const v = meter.getValue();
-        return typeof v === 'number' ? v : Math.max(...(v as number[]));
+        return typeof v === "number" ? v : Math.max(...(v as number[]));
       } catch {
         return -Infinity;
       }
@@ -309,15 +302,27 @@ function maybeSetupProbe(Tone: ToneModule): void {
       }
     };
   } catch (e) {
-    log.warn('probe setup error', e);
+    log.warn("probe setup error", e);
   }
 }
 
 // ─── Config key (stable hash) ─────────────────────────────────────────────────
 
 function chainKey(config: ToneConfig): string {
-  const { instrument, polyphony, envelope, detune, portamento, filter, reverb, delay, distortion, chorus, pingPongDelay, pan } =
-    config;
+  const {
+    instrument,
+    polyphony,
+    envelope,
+    detune,
+    portamento,
+    filter,
+    reverb,
+    delay,
+    distortion,
+    chorus,
+    pingPongDelay,
+    pan,
+  } = config;
   // `pan` is a per-chain node value, so a different STATIC pan needs its own
   // chain. Data-driven pan leaves config.pan at its baseline (so the key stays
   // stable across rows) and is modulated live via applyParams instead.
@@ -347,23 +352,31 @@ function chainKey(config: ToneConfig): string {
 // "Oscillator: invalid type"). mono/duo/metal all extend Monophonic, so they
 // wrap in a PolySynth exactly like fm/am; only pluck is the non-Monophonic
 // special case handled in buildChain.
-const NON_OSCILLATOR_INSTRUMENTS = ['fm', 'am', 'membrane', 'pluck', 'monosynth', 'duosynth', 'metal'];
+const NON_OSCILLATOR_INSTRUMENTS = [
+  "fm",
+  "am",
+  "membrane",
+  "pluck",
+  "monosynth",
+  "duosynth",
+  "metal",
+];
 
 function resolveVoiceClass(Tone: ToneModule, instrument: string): ToneModule {
   switch (instrument) {
-    case 'fm':
+    case "fm":
       return Tone.FMSynth;
-    case 'am':
+    case "am":
       return Tone.AMSynth;
-    case 'membrane':
+    case "membrane":
       return Tone.MembraneSynth;
-    case 'pluck':
+    case "pluck":
       return Tone.PluckSynth;
-    case 'monosynth':
+    case "monosynth":
       return Tone.MonoSynth;
-    case 'duosynth':
+    case "duosynth":
       return Tone.DuoSynth;
-    case 'metal':
+    case "metal":
       return Tone.MetalSynth;
     default:
       // sine/triangle/square/sawtooth → Synth with that oscillator type
@@ -372,30 +385,33 @@ function resolveVoiceClass(Tone: ToneModule, instrument: string): ToneModule {
 }
 
 function buildVoiceOptions(config: ToneConfig): Record<string, unknown> {
-  const instrument = config.instrument ?? 'sine';
+  const instrument = config.instrument ?? "sine";
   const opts: Record<string, unknown> = {};
 
   // Oscillator type for Synth-based voices (sine/triangle/square/sawtooth).
   if (!NON_OSCILLATOR_INSTRUMENTS.includes(instrument)) {
-    opts['oscillator'] = { type: instrument };
+    opts["oscillator"] = { type: instrument };
   }
 
   if (config.envelope) {
-    opts['envelope'] = { ...config.envelope };
+    opts["envelope"] = { ...config.envelope };
   }
   if (config.detune !== undefined && config.detune !== null) {
-    opts['detune'] = config.detune;
+    opts["detune"] = config.detune;
   }
   if (config.portamento !== undefined && config.portamento !== null) {
-    opts['portamento'] = config.portamento;
+    opts["portamento"] = config.portamento;
   }
   return opts;
 }
 
 // ─── Build a new chain ────────────────────────────────────────────────────────
 
-async function buildChain(Tone: ToneModule, config: ToneConfig): Promise<VoiceChain> {
-  const instrument = config.instrument ?? 'sine';
+async function buildChain(
+  Tone: ToneModule,
+  config: ToneConfig,
+): Promise<VoiceChain> {
+  const instrument = config.instrument ?? "sine";
   const polyphony = config.polyphony ?? 8;
   const VoiceClass = resolveVoiceClass(Tone, instrument);
   const voiceOpts = buildVoiceOptions(config);
@@ -428,7 +444,7 @@ async function buildChain(Tone: ToneModule, config: ToneConfig): Promise<VoiceCh
   let pingPong: ToneModule | null = null;
   if (config.pingPongDelay != null) {
     pingPong = new Tone.PingPongDelay({
-      delayTime: config.pingPongDelay.delayTime ?? '8n',
+      delayTime: config.pingPongDelay.delayTime ?? "8n",
       feedback: config.pingPongDelay.feedback ?? 0.2,
       wet: config.pingPongDelay.wet ?? 0.5,
     });
@@ -439,7 +455,7 @@ async function buildChain(Tone: ToneModule, config: ToneConfig): Promise<VoiceCh
   let delay: ToneModule | null = null;
   if (config.delay != null) {
     delay = new Tone.FeedbackDelay({
-      delayTime: config.delay.delayTime ?? '8n',
+      delayTime: config.delay.delayTime ?? "8n",
       feedback: config.delay.feedback ?? 0.2,
       wet: config.delay.wet ?? 0.1,
     });
@@ -450,7 +466,7 @@ async function buildChain(Tone: ToneModule, config: ToneConfig): Promise<VoiceCh
   let filter: ToneModule | null = null;
   if (config.filter != null) {
     filter = new Tone.Filter({
-      type: config.filter.type ?? 'lowpass',
+      type: config.filter.type ?? "lowpass",
       frequency: config.filter.frequency ?? 2200,
       Q: config.filter.q ?? 1,
       rolloff: config.filter.rolloff ?? -24,
@@ -486,7 +502,7 @@ async function buildChain(Tone: ToneModule, config: ToneConfig): Promise<VoiceCh
   // PluckSynth is already monophonic and doesn't support polyphony wrapping the same way;
   // wrap in PolySynth only for synths that support it
   let poly: ToneModule;
-  if (instrument === 'pluck') {
+  if (instrument === "pluck") {
     // PluckSynth is NOT derived from Monophonic, so it cannot be wrapped in a
     // PolySynth — Tone v15 throws "Voice must extend Monophonic class". Use it
     // standalone (it's monophonic, which is fine for one-note-per-event
@@ -511,7 +527,10 @@ async function buildChain(Tone: ToneModule, config: ToneConfig): Promise<VoiceCh
 
 // ─── Get or create chain ──────────────────────────────────────────────────────
 
-async function getChain(Tone: ToneModule, config: ToneConfig): Promise<VoiceChain> {
+async function getChain(
+  Tone: ToneModule,
+  config: ToneConfig,
+): Promise<VoiceChain> {
   const key = chainKey(config);
   if (chainCache.has(key)) {
     return chainCache.get(key)!;
@@ -523,10 +542,23 @@ async function getChain(Tone: ToneModule, config: ToneConfig): Promise<VoiceChai
     // A bad instrument/effect config must never silently kill audio (it used to:
     // getChain runs outside the trigger try/catch, so a throw here dropped the
     // note with no log). Fall back to a plain PolySynth so SOMETHING plays.
-    log.warn('buildChain failed; falling back to default Synth', config.instrument, e);
+    log.warn(
+      "buildChain failed; falling back to default Synth",
+      config.instrument,
+      e,
+    );
     const poly = new Tone.PolySynth(Tone.Synth);
     poly.connect(Tone.getDestination());
-    chain = { poly, filter: null, delay: null, reverb: null, distortion: null, chorus: null, pingPong: null, panner: null };
+    chain = {
+      poly,
+      filter: null,
+      delay: null,
+      reverb: null,
+      distortion: null,
+      chorus: null,
+      pingPong: null,
+      panner: null,
+    };
   }
   chainCache.set(key, chain);
   return chain;
@@ -534,18 +566,21 @@ async function getChain(Tone: ToneModule, config: ToneConfig): Promise<VoiceChai
 
 // ─── Note resolution ──────────────────────────────────────────────────────────
 
-function resolveNote(Tone: ToneModule, note: string | number | { midi: number }): string {
-  if (typeof note === 'string') {
+function resolveNote(
+  Tone: ToneModule,
+  note: string | number | { midi: number },
+): string {
+  if (typeof note === "string") {
     return note;
   }
-  if (typeof note === 'number') {
+  if (typeof note === "number") {
     // Treat as Hz
     return Tone.Frequency(note).toNote() as string;
   }
-  if (note && typeof note === 'object' && 'midi' in note) {
-    return Tone.Frequency(note.midi, 'midi').toNote() as string;
+  if (note && typeof note === "object" && "midi" in note) {
+    return Tone.Frequency(note.midi, "midi").toNote() as string;
   }
-  return 'C4';
+  return "C4";
 }
 
 // ─── value → pitch mapping ───────────────────────────────────────────────────
@@ -565,7 +600,12 @@ function resolveRootMidi(Tone: ToneModule, root: string): number {
  * dynamics (velocity/duration) use 0.5 (a flat signal stays audibly mid). Single
  * source of truth shared by valueToNote here and the view's channel mapping.
  */
-export function normalize01(value: number, min: number, max: number, emptyDefault = 0): number {
+export function normalize01(
+  value: number,
+  min: number,
+  max: number,
+  emptyDefault = 0,
+): number {
   const d = max - min;
   const t = d === 0 ? emptyDefault : (value - min) / d;
   return Math.min(1, Math.max(0, t));
@@ -575,13 +615,13 @@ export function valueToNote(
   Tone: ToneModule,
   value: number,
   config: ToneConfig,
-  rangeKey?: string
+  rangeKey?: string,
 ): string {
-  const scale = config.scale ?? 'pentatonic';
+  const scale = config.scale ?? "pentatonic";
   const intervals: number[] = Array.isArray(scale)
     ? scale
-    : SCALE_INTERVALS[scale as string] ?? SCALE_INTERVALS['pentatonic'];
-  const rootMidi = resolveRootMidi(Tone, config.root ?? 'C3');
+    : (SCALE_INTERVALS[scale as string] ?? SCALE_INTERVALS["pentatonic"]);
+  const rootMidi = resolveRootMidi(Tone, config.root ?? "C3");
   const octaves = config.octaves ?? 3;
   const descending = config.descending ?? false;
 
@@ -593,7 +633,7 @@ export function valueToNote(
     [rangeMin, rangeMax] = config.valueRange;
   } else {
     // Auto running min/max
-    const rKey = rangeKey ?? 'default';
+    const rKey = rangeKey ?? "default";
     let rr = runningRanges.get(rKey);
     if (!rr) {
       rr = { min: value, max: value };
@@ -614,7 +654,7 @@ export function valueToNote(
   const idx = Math.round(t * (steps - 1));
   const octaveOffset = Math.floor(idx / intervals.length);
   const midi = rootMidi + octaveOffset * 12 + intervals[idx % intervals.length];
-  return Tone.Frequency(midi, 'midi').toNote() as string;
+  return Tone.Frequency(midi, "midi").toNote() as string;
 }
 
 // ─── Data-driven effect-param channels ─────────────────────────────────────────
@@ -634,51 +674,89 @@ interface ParamSpec {
 }
 
 const PARAM_SPECS: Record<string, ParamSpec> = {
-  'filter.frequency': {
-    defMin: 200, defMax: 8000, log: true,
-    apply: (c, v) => { if (c.filter) c.filter.frequency.value = v; },
+  "filter.frequency": {
+    defMin: 200,
+    defMax: 8000,
+    log: true,
+    apply: (c, v) => {
+      if (c.filter) c.filter.frequency.value = v;
+    },
   },
-  'filter.q': {
-    defMin: 0.1, defMax: 18,
-    apply: (c, v) => { if (c.filter) c.filter.Q.value = v; },
+  "filter.q": {
+    defMin: 0.1,
+    defMax: 18,
+    apply: (c, v) => {
+      if (c.filter) c.filter.Q.value = v;
+    },
   },
-  'reverb.wet': {
-    defMin: 0, defMax: 1,
-    apply: (c, v) => { if (c.reverb) c.reverb.wet.value = v; },
+  "reverb.wet": {
+    defMin: 0,
+    defMax: 1,
+    apply: (c, v) => {
+      if (c.reverb) c.reverb.wet.value = v;
+    },
   },
-  'delay.feedback': {
-    defMin: 0, defMax: 0.9,
-    apply: (c, v) => { if (c.delay) c.delay.feedback.value = v; },
+  "delay.feedback": {
+    defMin: 0,
+    defMax: 0.9,
+    apply: (c, v) => {
+      if (c.delay) c.delay.feedback.value = v;
+    },
   },
-  'delay.wet': {
-    defMin: 0, defMax: 1,
-    apply: (c, v) => { if (c.delay) c.delay.wet.value = v; },
+  "delay.wet": {
+    defMin: 0,
+    defMax: 1,
+    apply: (c, v) => {
+      if (c.delay) c.delay.wet.value = v;
+    },
   },
-  'distortion.wet': {
-    defMin: 0, defMax: 1,
-    apply: (c, v) => { if (c.distortion) c.distortion.wet.value = v; },
+  "distortion.wet": {
+    defMin: 0,
+    defMax: 1,
+    apply: (c, v) => {
+      if (c.distortion) c.distortion.wet.value = v;
+    },
   },
-  'chorus.wet': {
-    defMin: 0, defMax: 1,
-    apply: (c, v) => { if (c.chorus) c.chorus.wet.value = v; },
+  "chorus.wet": {
+    defMin: 0,
+    defMax: 1,
+    apply: (c, v) => {
+      if (c.chorus) c.chorus.wet.value = v;
+    },
   },
-  'pingPong.wet': {
-    defMin: 0, defMax: 1,
-    apply: (c, v) => { if (c.pingPong) c.pingPong.wet.value = v; },
+  "pingPong.wet": {
+    defMin: 0,
+    defMax: 1,
+    apply: (c, v) => {
+      if (c.pingPong) c.pingPong.wet.value = v;
+    },
   },
-  'pingPong.feedback': {
-    defMin: 0, defMax: 0.9,
-    apply: (c, v) => { if (c.pingPong) c.pingPong.feedback.value = v; },
+  "pingPong.feedback": {
+    defMin: 0,
+    defMax: 0.9,
+    apply: (c, v) => {
+      if (c.pingPong) c.pingPong.feedback.value = v;
+    },
   },
-  'pan': {
-    defMin: -1, defMax: 1,
-    apply: (c, v) => { if (c.panner) c.panner.pan.value = v; },
+  pan: {
+    defMin: -1,
+    defMax: 1,
+    apply: (c, v) => {
+      if (c.panner) c.panner.pan.value = v;
+    },
   },
-  'detune': {
+  detune: {
     // PolySynth has no single detune AudioParam — set() updates all voices.
     // Affects still-ringing voices too (shared-node), acceptable per design.
-    defMin: -100, defMax: 100,
-    apply: (c, v) => { try { c.poly.set({ detune: v }); } catch { /* voice has no detune */ } },
+    defMin: -100,
+    defMax: 100,
+    apply: (c, v) => {
+      try {
+        c.poly.set({ detune: v });
+      } catch {
+        /* voice has no detune */
+      }
+    },
   },
 };
 
@@ -691,7 +769,12 @@ export function isParamPath(path: string): boolean {
  * Map a normalised 0..1 input `t` to an output value for `path`, using the
  * channel's [min, max] when given else the param's default output range.
  */
-export function mapParam(path: string, t: number, min?: number, max?: number): number {
+export function mapParam(
+  path: string,
+  t: number,
+  min?: number,
+  max?: number,
+): number {
   const spec = PARAM_SPECS[path];
   if (!spec) return t;
   const lo = min ?? spec.defMin;
@@ -704,7 +787,10 @@ export function mapParam(path: string, t: number, min?: number, max?: number): n
 }
 
 /** Write each resolved param value to its live node on the resolved chain. */
-function applyParams(chain: VoiceChain, params: Record<string, number> | undefined): void {
+function applyParams(
+  chain: VoiceChain,
+  params: Record<string, number> | undefined,
+): void {
   if (!params) return;
   for (const path of Object.keys(params)) {
     const spec = PARAM_SPECS[path];
@@ -712,7 +798,7 @@ function applyParams(chain: VoiceChain, params: Record<string, number> | undefin
     try {
       spec.apply(chain, params[path]);
     } catch (e) {
-      log.warn('applyParam error', path, e);
+      log.warn("applyParam error", path, e);
     }
   }
 }
@@ -729,13 +815,17 @@ export async function start(): Promise<void> {
 }
 
 export async function play(
-  args: { note: string | number | { midi: number }; duration?: string | number; velocity?: number },
-  config: ToneConfig
+  args: {
+    note: string | number | { midi: number };
+    duration?: string | number;
+    velocity?: number;
+  },
+  config: ToneConfig,
 ): Promise<void> {
   const Tone = await loadTone();
   const chain = await getChain(Tone, config);
   const noteName = resolveNote(Tone, args.note);
-  const duration = args.duration ?? '8n';
+  const duration = args.duration ?? "8n";
   const velocity = args.velocity ?? 1;
   try {
     chain.poly.triggerAttackRelease(noteName, duration, Tone.now(), velocity);
@@ -743,28 +833,32 @@ export async function play(
     // Approximate: decrement after ~2 seconds
     decayVoices(1, 2000);
   } catch (e) {
-    log.warn('play error', e);
+    log.warn("play error", e);
   }
-  hookLog({ op: 'play', note: noteName, duration, velocity, t: Date.now() });
+  hookLog({ op: "play", note: noteName, duration, velocity, t: Date.now() });
 }
 
 export async function chord(
-  args: { notes: Array<string | number | { midi: number }>; duration?: string | number; velocity?: number },
-  config: ToneConfig
+  args: {
+    notes: Array<string | number | { midi: number }>;
+    duration?: string | number;
+    velocity?: number;
+  },
+  config: ToneConfig,
 ): Promise<void> {
   const Tone = await loadTone();
   const chain = await getChain(Tone, config);
-  const noteNames = args.notes.map(n => resolveNote(Tone, n));
-  const duration = args.duration ?? '4n';
+  const noteNames = args.notes.map((n) => resolveNote(Tone, n));
+  const duration = args.duration ?? "4n";
   const velocity = args.velocity ?? 1;
   try {
     chain.poly.triggerAttackRelease(noteNames, duration, Tone.now(), velocity);
     getHook().activeVoices += noteNames.length;
     decayVoices(noteNames.length, 2000);
   } catch (e) {
-    log.warn('chord error', e);
+    log.warn("chord error", e);
   }
-  hookLog({ op: 'chord', notes: noteNames, duration, velocity, t: Date.now() });
+  hookLog({ op: "chord", notes: noteNames, duration, velocity, t: Date.now() });
 }
 
 /**
@@ -780,31 +874,37 @@ export async function chordSequence(
     duration?: string | number;
     velocity?: number;
   },
-  config: ToneConfig
+  config: ToneConfig,
 ): Promise<void> {
   const Tone = await loadTone();
   const chain = await getChain(Tone, config);
-  const duration = args.duration ?? '2n';
+  const duration = args.duration ?? "2n";
   const velocity = args.velocity ?? 0.8;
   let gapSeconds: number;
   try {
-    gapSeconds = Tone.Time(args.gap ?? '4n').toSeconds() as number;
+    gapSeconds = Tone.Time(args.gap ?? "4n").toSeconds() as number;
   } catch {
     gapSeconds = 0.5;
   }
   const now = Tone.now() as number;
 
   (args.chords ?? []).forEach((notes, i) => {
-    const noteNames = notes.map(n => resolveNote(Tone, n));
+    const noteNames = notes.map((n) => resolveNote(Tone, n));
     const startTime = now + i * gapSeconds;
     try {
       chain.poly.triggerAttackRelease(noteNames, duration, startTime, velocity);
       getHook().activeVoices += noteNames.length;
       decayVoices(noteNames.length, (i * gapSeconds + 2) * 1000);
     } catch (e) {
-      log.warn('chordSequence error', e);
+      log.warn("chordSequence error", e);
     }
-    hookLog({ op: 'chord', notes: noteNames, duration, velocity, t: Date.now() });
+    hookLog({
+      op: "chord",
+      notes: noteNames,
+      duration,
+      velocity,
+      t: Date.now(),
+    });
   });
 }
 
@@ -817,7 +917,7 @@ export async function sequence(
     gap?: string | number;
     envelope?: EnvelopeConfig | null;
   },
-  config: ToneConfig
+  config: ToneConfig,
 ): Promise<void> {
   const Tone = await loadTone();
 
@@ -827,33 +927,43 @@ export async function sequence(
     : config;
 
   const chain = await getChain(Tone, effectiveConfig);
-  const gap = args.gap ?? '16n';
-  let gapSeconds: number;
-  try {
-    gapSeconds = Tone.Time(gap).toSeconds() as number;
-  } catch {
-    gapSeconds = 0.1;
-  }
+  const toSeconds = (time: string | number, fallback: number): number => {
+    try {
+      return Tone.Time(time).toSeconds() as number;
+    } catch {
+      return fallback;
+    }
+  };
+  const gapSeconds = toSeconds(args.gap ?? 0, 0);
 
   const noteNames: string[] = [];
   const now = Tone.now() as number;
+  // Each note occupies its own duration, so per-note durations carry the
+  // rhythm; `gap` is extra articulation silence after each one. A null note is
+  // a REST — it takes its time without sounding.
+  let startTime = now;
 
-  args.notes.forEach((spec, i) => {
-    const noteName = resolveNote(Tone, spec.note);
-    const duration = spec.duration ?? '16n';
-    const velocity = spec.velocity ?? 1;
-    const startTime = now + i * gapSeconds;
-    noteNames.push(noteName);
-    try {
-      chain.poly.triggerAttackRelease(noteName, duration, startTime, velocity);
-      getHook().activeVoices += 1;
-      decayVoices(1, (i * gapSeconds + 2) * 1000);
-    } catch (e) {
-      log.warn('sequence note error', e);
+  args.notes.forEach((spec) => {
+    const duration = spec.duration ?? "16n";
+    if (spec.note != null) {
+      // An array item is a chord: all of its notes strike together.
+      const names = (Array.isArray(spec.note) ? spec.note : [spec.note]).map(
+        (n) => resolveNote(Tone, n),
+      );
+      const velocity = spec.velocity ?? 1;
+      noteNames.push(...names);
+      try {
+        chain.poly.triggerAttackRelease(names, duration, startTime, velocity);
+        getHook().activeVoices += names.length;
+        decayVoices(names.length, (startTime - now + 2) * 1000);
+      } catch (e) {
+        log.warn("sequence note error", e);
+      }
     }
+    startTime += toSeconds(duration, 0.1) + gapSeconds;
   });
 
-  hookLog({ op: 'sequence', notes: noteNames, t: Date.now() });
+  hookLog({ op: "sequence", notes: noteNames, t: Date.now() });
 }
 
 /**
@@ -875,7 +985,7 @@ export async function tone(
     // (e.g. {'reverb.wet': 0.6}). Written to the resolved chain's live nodes.
     params?: Record<string, number>;
   },
-  config: ToneConfig
+  config: ToneConfig,
 ): Promise<void> {
   const Tone = await loadTone();
   const effectiveConfig: ToneConfig = args.overrides
@@ -892,91 +1002,120 @@ export async function tone(
   // number, not a numeric string, so Tone never mis-parses it as notation).
   const duration: string | number =
     args.duration ??
-    (effectiveConfig.envelope?.decay ? effectiveConfig.envelope.decay * 4 : '8n');
+    (effectiveConfig.envelope?.decay
+      ? effectiveConfig.envelope.decay * 4
+      : "8n");
   try {
     chain.poly.triggerAttackRelease(noteName, duration, Tone.now(), velocity);
     getHook().activeVoices += 1;
     decayVoices(1, 2000);
   } catch (e) {
-    log.warn('tone play error', e);
+    log.warn("tone play error", e);
   }
   hookLog({
-    op: 'value',
+    op: "value",
     note: noteName,
     duration,
     velocity,
-    instrument: effectiveConfig.instrument ?? 'sine',
+    instrument: effectiveConfig.instrument ?? "sine",
     t: Date.now(),
   });
 }
 
 export async function value(
-  args: { value: number; overrides?: Partial<ToneConfig>; params?: Record<string, number> },
-  config: ToneConfig
+  args: {
+    value: number;
+    overrides?: Partial<ToneConfig>;
+    params?: Record<string, number>;
+  },
+  config: ToneConfig,
 ): Promise<void> {
   // Single-dimension mapping: full velocity, duration derived from the envelope.
   await tone(
-    { value: args.value, velocity: 1, overrides: args.overrides, params: args.params },
-    config
+    {
+      value: args.value,
+      velocity: 1,
+      overrides: args.overrides,
+      params: args.params,
+    },
+    config,
   );
 }
 
 export async function stop(): Promise<void> {
   // Release all voices on all chains
-  chainCache.forEach(chain => {
+  chainCache.forEach((chain) => {
     try {
       chain.poly.releaseAll();
     } catch (e) {
-      log.warn('stop releaseAll error', e);
+      log.warn("stop releaseAll error", e);
     }
   });
   const hook = getHook();
   hook.activeVoices = 0;
-  hookLog({ op: 'stop', t: Date.now() });
+  hookLog({ op: "stop", t: Date.now() });
 }
 
 export async function setVolume(db: number): Promise<void> {
   const Tone = await loadTone();
   Tone.getDestination().volume.value = db;
-  hookLog({ op: 'setVolume', db, t: Date.now() });
+  hookLog({ op: "setVolume", db, t: Date.now() });
 }
 
 export function dispose(): void {
-  chainCache.forEach(chain => {
+  chainCache.forEach((chain) => {
     try {
       chain.poly.dispose();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     try {
       chain.filter?.dispose();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     try {
       chain.delay?.dispose();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     try {
       chain.reverb?.dispose();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     try {
       chain.distortion?.dispose();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     try {
       chain.chorus?.dispose();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     try {
       chain.pingPong?.dispose();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     try {
       chain.panner?.dispose();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   });
   chainCache.clear();
   // Tear down the shared master limiter so the next mount rebuilds it fresh.
   try {
     masterLimiter?.dispose();
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   masterLimiter = null;
   runningRanges.clear();
   // Clear any pending activeVoices decay timers so they don't fire post-teardown.
-  voiceTimers.forEach(id => clearTimeout(id));
+  voiceTimers.forEach((id) => clearTimeout(id));
   voiceTimers.clear();
   started = false;
   const hook = getHook();
@@ -984,69 +1123,151 @@ export function dispose(): void {
   hook.activeVoices = 0;
 }
 
-// ─── Dispatch a single event object (used by the view) ───────────────────────
+// ─── Dispatch a single event object ──────────────────────────────────────────
+
+/** The event name the Python side sends; the key of the plugin's eventMapping. */
+export const TONES_EVENT = "deephaven_plugin_tones.event";
+
+/**
+ * A data-driven effect param for one event: `t` is the source column's
+ * normalised 0..1 position (Python resolved the input span), `min`/`max` an
+ * optional output range. The engine owns the default output range per path.
+ */
+export interface ParamInput {
+  t: number;
+  min?: number;
+  max?: number;
+}
 
 export interface ToneEvent {
-  id: number;
   op: string;
-  note?: string | number | { midi: number };
-  notes?: Array<string | number | { midi: number }>;
+  /** The sound config for this event — every event carries its own. */
+  config?: ToneConfig;
+  note?: string | number | { midi: number } | null;
+  notes?: NoteSpec[] | Array<string | number | { midi: number }>;
+  chords?: Array<Array<string | number | { midi: number }>>;
   duration?: string | number;
   velocity?: number;
   gap?: string | number;
   envelope?: EnvelopeConfig | null;
   value?: number;
   overrides?: Partial<ToneConfig>;
-  db?: number;
+  params?: Record<string, ParamInput>;
 }
 
-export async function dispatchEvent(event: ToneEvent, config: ToneConfig): Promise<void> {
+/** Resolve each param channel's normalised position to its output value. */
+function resolveParams(
+  params: Record<string, ParamInput> | undefined,
+): Record<string, number> | undefined {
+  if (!params) return undefined;
+  const out: Record<string, number> = {};
+  for (const path of Object.keys(params)) {
+    if (!isParamPath(path)) continue;
+    const spec = params[path];
+    out[path] = mapParam(path, spec.t, spec.min, spec.max);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+export async function dispatchEvent(
+  event: ToneEvent,
+  config: ToneConfig,
+): Promise<void> {
   switch (event.op) {
-    case 'play':
+    case "play":
       await play(
-        { note: event.note ?? 'C4', duration: event.duration, velocity: event.velocity },
-        config
+        {
+          note: event.note ?? "C4",
+          duration: event.duration,
+          velocity: event.velocity,
+        },
+        config,
       );
       break;
-    case 'chord':
+    case "chord":
       await chord(
-        { notes: event.notes ?? [], duration: event.duration, velocity: event.velocity },
-        config
+        {
+          notes: (event.notes ?? []) as Array<
+            string | number | { midi: number }
+          >,
+          duration: event.duration,
+          velocity: event.velocity,
+        },
+        config,
       );
       break;
-    case 'sequence':
+    case "chordSequence":
+      await chordSequence(
+        {
+          chords: event.chords ?? [],
+          gap: event.gap,
+          duration: event.duration,
+          velocity: event.velocity,
+        },
+        config,
+      );
+      break;
+    case "sequence":
       await sequence(
         {
-          notes: (event.notes ?? []) as unknown as SequenceNoteSpec[],
+          notes: (event.notes ?? []) as NoteSpec[],
           gap: event.gap,
           envelope: event.envelope,
         },
-        config
+        config,
       );
       break;
-    case 'value':
+    case "value":
       if (event.value !== undefined) {
-        await value({ value: event.value, overrides: event.overrides }, config);
+        await value(
+          {
+            value: event.value,
+            overrides: event.overrides,
+            params: resolveParams(event.params),
+          },
+          config,
+        );
       }
       break;
-    case 'stop':
-      await stop();
-      break;
-    case 'setVolume':
-      if (event.db !== undefined) {
-        await setVolume(event.db);
+    case "tone":
+      if (event.value !== undefined) {
+        await tone(
+          {
+            value: event.value,
+            velocity: event.velocity,
+            duration: event.duration,
+            overrides: event.overrides,
+            params: resolveParams(event.params),
+          },
+          config,
+        );
       }
       break;
     default:
-      log.warn('Unknown tone op:', event.op);
+      log.warn("Unknown tone op:", event.op);
   }
 }
 
-// Singleton object export (for convenience in the view)
+/**
+ * Handle one `deephaven_plugin_tones.event` from the server: unlock audio (the
+ * browser needs a user gesture, which any click on the page satisfies) and play
+ * it. Each event carries its own config, so nothing persists between events.
+ */
+export async function handleToneEvent(
+  params: Record<string, unknown>,
+): Promise<void> {
+  const event = params as unknown as ToneEvent;
+  try {
+    await start();
+    await dispatchEvent(event, event.config ?? {});
+  } catch (e) {
+    log.warn("tone event error", e);
+  }
+}
+
+// Singleton object export (convenient for tests and the event handler)
 const ToneEngine = {
   loadTone,
-  acquire,
-  release,
   start,
   play,
   chord,
@@ -1058,6 +1279,7 @@ const ToneEngine = {
   setVolume,
   dispose,
   dispatchEvent,
+  handleToneEvent,
   valueToNote,
   mapParam,
   isParamPath,

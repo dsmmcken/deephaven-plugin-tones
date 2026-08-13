@@ -49,7 +49,7 @@ from deephaven import empty_table, ui
 from deephaven.execution_context import get_exec_ctx
 from deephaven.stream.table_publisher import table_publisher
 
-from deephaven_plugin_tones import table_tones
+from deephaven_plugin_tones import use_table_tones_listener
 
 # Major-scale degree -> display note name (octave 4).
 _NOTE_NAMES = ["C", "D", "E", "F", "G", "A", "B"]
@@ -113,7 +113,7 @@ _twinkle_table, _publisher = table_publisher(
 
 @ui.component
 def twinkle_panel():
-    """Layout: invisible table_tones() engine + the live melody table."""
+    """Layout: the live melody table, sonified by the listener hook."""
 
     def _start_playing():
         """use_effect: walk the melody on a thread; cleanup stops it on close."""
@@ -145,27 +145,28 @@ def twinkle_panel():
 
     ui.use_effect(_start_playing, [])
 
+    use_table_tones_listener(
+        _twinkle_table,
+        # Degree 0..6 -> exact major-scale notes C4..B4.
+        pitch=("Degree", 0, 6),
+        mode="last",  # one note per publish cycle
+        scale="major",
+        root="C4",
+        octaves=1,
+        # Soft music-box-ish voice: quick mallet attack, short ring.
+        instrument="triangle",
+        envelope_attack=0.002,
+        envelope_decay=0.28,
+        envelope_sustain=0.0,
+        envelope_release=0.3,
+        reverb_decay=1.6,
+        reverb_wet=0.25,
+        reverb_predelay=0.01,
+        volume=-10,
+        rate_limit_ms=0,
+    )
+
     return ui.flex(
-        table_tones(
-            table=_twinkle_table,
-            # Degree 0..6 -> exact major-scale notes C4..B4.
-            pitch=("Degree", 0, 6),
-            mode="last",  # blink table auto-detected -> one note per tick
-            scale="major",
-            root="C4",
-            octaves=1,
-            # Soft music-box-ish voice: quick mallet attack, short ring.
-            instrument="triangle",
-            envelope_attack=0.002,
-            envelope_decay=0.28,
-            envelope_sustain=0.0,
-            envelope_release=0.3,
-            reverb_decay=1.6,
-            reverb_wet=0.25,
-            reverb_predelay=0.01,
-            volume=-10,
-            rate_limit_ms=0,
-        ),
         ui.table(_twinkle_table),
         direction="row",
         flex="1",

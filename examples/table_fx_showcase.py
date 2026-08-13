@@ -39,7 +39,7 @@ in the panel once -- audio plays automatically from then on.
 
 from deephaven import time_table, ui
 
-from deephaven_plugin_tones import table_tones
+from deephaven_plugin_tones import use_table_tones_listener
 
 # ---------------------------------------------------------------------------
 # Simulated live signal -- one row per second.
@@ -58,39 +58,40 @@ _stream = time_table("PT1S").update(
 @ui.component
 def fx_showcase_panel():
     """
-    Layout: table_tones() (invisible) + the live stream, side by side.
+    Layout: the live stream, sonified by the listener hook.
 
-    table_tones() takes zero layout space; the table fills the panel.
+    use_table_tones_listener() renders nothing; the table fills the panel.
     """
+    # One note per row: Signal -> pitch, Energy -> distortion wet (data-driven),
+    # routed through chorus + ping-pong delay.
+    use_table_tones_listener(
+        _stream,
+        mode="all",
+        pitch="Signal",
+        # ── new instrument voice ────────────────────────────────────────
+        instrument="monosynth",
+        # ── new inline effects ──────────────────────────────────────────
+        distortion=True,
+        distortion_wet="Energy",  # data-driven: busier data = grittier
+        chorus=True,
+        chorus_depth=0.6,
+        chorus_wet=0.4,
+        ping_pong=True,
+        ping_pong_time="8n",
+        ping_pong_feedback=0.25,
+        ping_pong_wet=0.35,
+        # ── pitch mapping (auto-ranged) ─────────────────────────────────
+        scale="pentatonic",
+        root="C3",
+        octaves=3,
+        # ── space + headroom ────────────────────────────────────────────
+        reverb_wet=0.2,
+        volume=-9,
+        # limiter is on by default (-1 dBFS) — keeps the wet rows clean.
+        rate_limit_ms=0,  # mode="all": don't drop rows
+    )
+
     return ui.flex(
-        # Invisible audio engine. One note per row: Signal -> pitch, Energy ->
-        # distortion wet (data-driven), routed through chorus + ping-pong delay.
-        table_tones(
-            table=_stream,
-            mode="all",
-            pitch="Signal",
-            # ── new instrument voice ────────────────────────────────────────
-            instrument="monosynth",
-            # ── new inline effects ──────────────────────────────────────────
-            distortion=True,
-            distortion_wet="Energy",  # data-driven: busier data = grittier
-            chorus=True,
-            chorus_depth=0.6,
-            chorus_wet=0.4,
-            ping_pong=True,
-            ping_pong_time="8n",
-            ping_pong_feedback=0.25,
-            ping_pong_wet=0.35,
-            # ── pitch mapping (auto-ranged) ─────────────────────────────────
-            scale="pentatonic",
-            root="C3",
-            octaves=3,
-            # ── space + headroom ────────────────────────────────────────────
-            reverb_wet=0.2,
-            volume=-9,
-            # limiter is on by default (-1 dBFS) — keeps the wet rows clean.
-            rate_limit_ms=0,  # mode="all": don't drop rows
-        ),
         ui.table(_stream),
         direction="row",
         flex="1",

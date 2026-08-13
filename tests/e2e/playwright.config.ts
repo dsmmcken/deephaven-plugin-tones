@@ -16,11 +16,12 @@
  *   npm run test:tier2      # tier2 only
  */
 
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices } from "@playwright/test";
+import { fileURLToPath } from "url";
 
 export default defineConfig({
   // Look for tests in the tests/ subdirectory
-  testDir: './tests',
+  testDir: "./tests",
 
   // Run tests in files in parallel
   fullyParallel: false,
@@ -36,19 +37,19 @@ export default defineConfig({
 
   // Reporter to use
   reporter: [
-    ['list'],
-    ['html', { open: 'never', outputFolder: 'playwright-report' }],
+    ["list"],
+    ["html", { open: "never", outputFolder: "playwright-report" }],
   ],
 
   use: {
     // Default browser: Chromium (headless)
-    ...devices['Desktop Chrome'],
+    ...devices["Desktop Chrome"],
 
     // Collect trace when retrying the failed test
-    trace: 'on-first-retry',
+    trace: "on-first-retry",
 
     // Screenshot on failure
-    screenshot: 'only-on-failure',
+    screenshot: "only-on-failure",
 
     // Longer timeout for audio operations
     actionTimeout: 10_000,
@@ -56,36 +57,36 @@ export default defineConfig({
 
   projects: [
     {
-      name: 'tier1',
-      testMatch: '**/tier1/**/*.spec.ts',
+      name: "tier1",
+      testMatch: "**/tier1/**/*.spec.ts",
       use: {
-        ...devices['Desktop Chrome'],
+        ...devices["Desktop Chrome"],
         // Launch args needed for headless audio (Chromium)
         launchOptions: {
           args: [
-            '--autoplay-policy=no-user-gesture-required',
-            '--disable-web-security',
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--use-fake-ui-for-media-stream',
-            '--use-fake-device-for-media-stream',
-            '--use-file-for-fake-audio-capture=/dev/null',
+            "--autoplay-policy=no-user-gesture-required",
+            "--disable-web-security",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--use-fake-ui-for-media-stream",
+            "--use-fake-device-for-media-stream",
+            "--use-file-for-fake-audio-capture=/dev/null",
           ],
         },
       },
     },
     {
-      name: 'tier2',
-      testMatch: '**/tier2/**/*.spec.ts',
+      name: "tier2",
+      testMatch: "**/tier2/**/*.spec.ts",
       use: {
-        ...devices['Desktop Chrome'],
+        ...devices["Desktop Chrome"],
         launchOptions: {
           args: [
-            '--autoplay-policy=no-user-gesture-required',
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--use-fake-ui-for-media-stream',
-            '--use-fake-device-for-media-stream',
+            "--autoplay-policy=no-user-gesture-required",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--use-fake-ui-for-media-stream",
+            "--use-fake-device-for-media-stream",
           ],
         },
       },
@@ -95,18 +96,18 @@ export default defineConfig({
   // Harness static server — required for tier1 tests.
   // Playwright starts this before the tests run and tears it down after.
   webServer: {
-    command: 'node harness/server.js 19876',
-    url: 'http://127.0.0.1:19876/',
+    command: "node harness/server.js 19876",
+    url: "http://127.0.0.1:19876/",
     timeout: 30_000,
     reuseExistingServer: !process.env.CI,
-    cwd: '/workspace/tests/e2e',
-    stdout: 'pipe',
-    stderr: 'pipe',
+    cwd: fileURLToPath(new URL(".", import.meta.url)),
+    stdout: "pipe",
+    stderr: "pipe",
   },
 
   // Global test timeout
   timeout: 60_000,
 
   // Output dir for test artifacts
-  outputDir: 'test-results',
+  outputDir: "test-results",
 });

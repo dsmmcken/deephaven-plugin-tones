@@ -3,26 +3,24 @@ deephaven-plugin-tones — Python API.
 
 Public surface::
 
-    from deephaven_plugin_tones import use_tones, table_tones
+    from deephaven import ui
+    from deephaven_plugin_tones import tones, use_table_tones_listener
 
 
     @ui.component
     def my_panel():
-        # Manual triggers: a hook returning (element, control).
-        audio, audio_control = use_tones(instrument="sine")
-        return ui.flex(
-            audio,
-            ui.button("Play C4", on_press=lambda _e: audio_control.play("C4")),
-        )
+        # Manual triggers: call `tones` from any handler.
+        return ui.button("Play C4", on_press=lambda _e: tones.play("C4"))
 
 
     @ui.component
     def market_sounds(prices):
-        # Declarative table sonification: a bare element to mount.
-        return ui.flex(table_tones(prices, pitch="Price"), ui.table(prices))
+        # Table sonification: a hook that listens and sounds each new row.
+        use_table_tones_listener(prices, pitch="Price")
+        return ui.table(prices)
 """
 
-from .deephaven_plugin_tones_component import (
+from ._config import (
     ColumnInput,
     FilterRolloff,
     FilterType,
@@ -32,22 +30,18 @@ from .deephaven_plugin_tones_component import (
     NoteValue,
     ParamInput,
     TableMode,
-    Tones,
-    TonesControl,
-    TonesElement,
     ToneTime,
     VoiceOverride,
-    table_tones,
-    use_tones,
 )
+from .table_tones import use_table_tones_listener
+from .tones import Tones, TonesError, tones
 
 __all__ = [
-    # entry points + result/handle types
-    "use_tones",
-    "table_tones",
+    # entry points
+    "tones",
+    "use_table_tones_listener",
     "Tones",
-    "TonesElement",
-    "TonesControl",
+    "TonesError",
     # type aliases for annotating user code
     "Instrument",
     "FilterType",
